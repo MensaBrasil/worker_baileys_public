@@ -230,8 +230,24 @@ async function sendGroupInviteMessage(
     console.log(`\x1b[32mInvite enviado a ${userJid} para ${groupJid}\x1b[0m`);
     return true;
   } catch (e) {
-    console.warn(`Falha ao enviar invite a ${userJid}: ${String((e as Error)?.message ?? e)}`);
-    return false;
+    const errMsg = String((e as Error)?.message ?? e);
+    console.warn(`Falha ao enviar invite a ${userJid}: ${errMsg}`);
+
+    // Fallback: enviar link de convite como texto simples (compatível com todas as versões)
+    try {
+      const code = await sock.groupInviteCode(groupJid);
+      if (!code) return false;
+      const inviteUrl = `https://chat.whatsapp.com/${code}`;
+      const text = `Convite para o grupo "${meta?.subject ?? groupJid}":\n${inviteUrl}`;
+      await sock.sendMessage(userJid, { text });
+      console.log(`\x1b[32mLink de convite enviado a ${userJid} para ${groupJid}\x1b[0m`);
+      return true;
+    } catch (fallbackErr) {
+      console.warn(
+        `Fallback de link também falhou para ${userJid}: ${String((fallbackErr as Error)?.message ?? fallbackErr)}`,
+      );
+      return false;
+    }
   }
 }
 
