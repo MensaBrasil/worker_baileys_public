@@ -1,4 +1,4 @@
-import "dotenv/config";
+import { config as configDotenv } from "dotenv";
 import {
   makeWASocket,
   useMultiFileAuthState,
@@ -14,6 +14,8 @@ import { BoomError } from "./types/errorTypes";
 import { processAddQueue } from "./core/addTask";
 import type { Worker } from "./types/addTaskTypes";
 import { getAllWhatsAppWorkers } from "./db/pgsql";
+
+configDotenv({ path: ".env" });
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 

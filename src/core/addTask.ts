@@ -1,4 +1,4 @@
-import "dotenv/config";
+import { config as configDotenv } from "dotenv";
 import type { WASocket, GroupMetadata } from "baileys";
 import { proto } from "baileys";
 import { AddAttemptResult, AddProcessResult, MemberPhone, Worker } from "../types/addTaskTypes";
@@ -15,8 +15,32 @@ import {
 } from "../db/pgsql";
 import { getFromAddQueue } from "../db/redis";
 
-const ADD_DELAY = Number(process.env.ADD_DELAY ?? 15);
-const DELAY_OFFSET = Number(process.env.DELAY_OFFSET ?? 3);
+configDotenv({ path: ".env" });
+
+const ADD_DELAY_RAW = process.env.ADD_DELAY;
+const DELAY_OFFSET_RAW = process.env.DELAY_OFFSET;
+
+if (!ADD_DELAY_RAW || !DELAY_OFFSET_RAW) {
+  const missing = [
+    ["ADD_DELAY", ADD_DELAY_RAW],
+    ["DELAY_OFFSET", DELAY_OFFSET_RAW],
+  ]
+    .filter(([, v]) => !v)
+    .map(([k]) => k)
+    .join(", ");
+  console.error(`Missing required env var(s): ${missing}. Define them in .env. Exiting...`);
+  process.exit(1);
+}
+
+const ADD_DELAY = Number(ADD_DELAY_RAW);
+const DELAY_OFFSET = Number(DELAY_OFFSET_RAW);
+
+if (!Number.isFinite(ADD_DELAY) || !Number.isFinite(DELAY_OFFSET)) {
+  console.error(
+    `Env vars ADD_DELAY and DELAY_OFFSET must be valid numbers. Got ADD_DELAY="${ADD_DELAY_RAW}", DELAY_OFFSET="${DELAY_OFFSET_RAW}". Exiting...`,
+  );
+  process.exit(1);
+}
 
 /**
  * Reads an item from the queue and processes group inclusion.

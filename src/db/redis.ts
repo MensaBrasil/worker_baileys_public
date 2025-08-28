@@ -2,7 +2,7 @@ import { config as configDotenv } from "dotenv";
 import { createClient, RedisClientType } from "redis";
 import { AddQueueItem, RemoveQueueItem, QueueKey } from "../types/redisTypes";
 
-configDotenv();
+configDotenv({ path: ".env" });
 
 const client: RedisClientType = createClient({
   password: process.env.REDIS_PASSWORD,

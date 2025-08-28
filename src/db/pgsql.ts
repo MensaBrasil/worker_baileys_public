@@ -9,7 +9,7 @@ import type {
   WhatsAppWorker,
 } from "../types/pgsqlTypes.ts";
 
-configDotenv();
+configDotenv({ path: ".env" });
 
 /** Ensure required env vars exist and coerce types */
 function readPgEnv(): PgEnv & { PG_DB_PORT: string } {
