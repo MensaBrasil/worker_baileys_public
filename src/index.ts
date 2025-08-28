@@ -69,7 +69,7 @@ async function main() {
       console.log("[wa] connection opened.");
 
       // Get worker phone from current Baileys instance
-      const workerPhone = sock.user?.id?.replace(/\D/g, "");
+      const workerPhone = sock.user?.id?.split(":")[0]?.replace(/\D/g, "");
       if (!workerPhone) throw new Error("Unable to determine worker phone from Baileys instance.");
 
       // Get worker id from database
