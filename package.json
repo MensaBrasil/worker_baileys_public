@@ -6,11 +6,13 @@
   "main": "index.js",
   "scripts": {
     "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "run-prod": "node dist/index.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "fmt": "prettier . --check",
     "fmt:write": "prettier . --write",
-    "get-queues": "ts-node src/tools/getRedisQueue.ts",
+    "get-queues": "node dist/tools/getRedisQueue.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
