@@ -65,6 +65,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
   };
 
   // 3) Attempt loop
+  let anyAuthorized = false;
   for (const phone of memberPhones) {
     if (!phone?.phone) continue;
 
@@ -81,31 +82,61 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
       console.log(`\x1b[31mTelefone ${normalized} não autorizado.\x1b[0m`);
       continue;
     }
+    anyAuthorized = true;
 
     // Executes inclusion
     const attempt = await addMemberToGroup(sock, authorized.phone_number, groupJid, item, meta);
     if (attempt.added || attempt.isInviteV4Sent || attempt.alreadyInGroup) {
       await recordUserEntryToGroup(parseInt(item.registration_id), normalized, groupJid, "Active");
-      results.processedPhones++;
+      if (attempt.added) {
+        results.added = true;
+        results.processedPhones++;
+      }
+      if (attempt.isInviteV4Sent) {
+        results.inviteSent = true;
+        results.processedPhones++;
+      }
+      if (attempt.alreadyInGroup) {
+        results.alreadyInGroup = true;
+        results.processedPhones++;
+      }
 
-      if (attempt.added) results.added = true;
-      if (attempt.isInviteV4Sent) results.inviteSent = true;
-      if (attempt.alreadyInGroup) results.alreadyInGroup = true;
-
-      // backoff between attempts (to avoid bans and limits)
-      await delaySecs(ADD_DELAY, DELAY_OFFSET);
+      // backoff between attempts: use env-based delay only on successful add; otherwise, a small random delay (3–9s)
+      if (attempt.added) {
+        await delaySecs(ADD_DELAY, DELAY_OFFSET);
+      } else {
+        await delaySecs(3, 6);
+      }
+    } else {
+      // addition failed without invite/already-in-group: mini random delay
+      await delaySecs(3, 6);
     }
   }
 
-  // 4) Marks fulfilled/attempt
-  if (results.processedPhones > 0) {
+  // If there were no authorized numbers at all, notify reason
+  if (!anyAuthorized) {
+    const msg = `Nenhum telefone autorizado para registration_id ${item.registration_id}.`;
+    console.log(`\x1b[31m${msg}\x1b[0m`);
+    await sendAdditionFailedReason(item.request_id, msg);
+  }
+
+  // 4) Marks fulfilled/attempt — if at least one successful add, invite sent, or already in group
+  if (results.added || results.inviteSent || results.alreadyInGroup) {
     await registerWhatsappAddFulfilled(item.request_id);
     console.log(
       `\x1b[92mRequest ${item.request_id} cumprida — ${results.processedPhones}/${results.totalPhones}\x1b[0m`,
     );
+    if (results.added) {
+      await delaySecs(ADD_DELAY, DELAY_OFFSET);
+    } else {
+      // addition failed without invite/already-in-group: mini random delay
+      await delaySecs(3, 6);
+    }
   } else {
     await registerWhatsappAddAttempt(item.request_id);
     console.log(`\x1b[31mNão foi possível cumprir request ${item.request_id} (reg=${item.registration_id}).\x1b[0m`);
+    // No progress at all: mini random delay to avoid tight loops
+    await delaySecs(3, 6);
   }
 
   return results;
