@@ -10,6 +10,7 @@ import configPrettier from "eslint-config-prettier";
 
 export default defineConfig([
   {
+    ignores: ["dist/**/*", "pnpm-lock.yaml", "yarn.lock", "package-lock.json", "node_modules/**/*"],
     files: ["**/*.{js,mjs,cjs,ts,mts,cts}"],
     plugins: {
       js,
