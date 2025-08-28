@@ -56,20 +56,6 @@ async function main() {
     syncFullHistory: false,
   });
 
-  // Get worker phone from current Baileys instance
-  const workerPhone = sock.user?.id?.replace(/\D/g, "");
-  if (!workerPhone) throw new Error("Unable to determine worker phone from Baileys instance.");
-
-  // Get worker id from database
-  const workers = await getAllWhatsAppWorkers();
-  const found = workers.find((w) => w.worker_phone.replace(/\D/g, "") === workerPhone);
-  if (!found) throw new Error(`Worker phone ${workerPhone} not found in database.`);
-
-  const worker: Worker = {
-    id: found.id,
-    phone: found.worker_phone,
-  };
-
   // keep reference to cancel the loop on reconnection/closure
   let stopAddLoop: (() => void) | null = null;
 
@@ -81,6 +67,20 @@ async function main() {
 
     if (connection === "open") {
       console.log("[wa] connection opened.");
+
+      // Get worker phone from current Baileys instance
+      const workerPhone = sock.user?.id?.replace(/\D/g, "");
+      if (!workerPhone) throw new Error("Unable to determine worker phone from Baileys instance.");
+
+      // Get worker id from database
+      const workers = await getAllWhatsAppWorkers();
+      const found = workers.find((w) => w.worker_phone.replace(/\D/g, "") === workerPhone);
+      if (!found) throw new Error(`Worker phone ${workerPhone} not found in database.`);
+
+      const worker: Worker = {
+        id: found.id,
+        phone: found.worker_phone,
+      };
 
       if (stopAddLoop) stopAddLoop();
 
