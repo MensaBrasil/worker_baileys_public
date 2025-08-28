@@ -212,7 +212,7 @@ async function safeGroupMetadata(sock: WASocket, groupJid: string): Promise<Grou
 }
 /** Checks if the bot itself is admin/superadmin in the group */
 function checkIfSelfIsAdmin(sock: WASocket, meta: GroupMetadata): boolean {
-  const me = sock.user?.id;
+  const me = sock.user?.id ? sock.user.id.split(":")[0] + "@s.whatsapp.net" : undefined;
   if (!me) return false;
   const self = meta.participants?.find((p) => p.id === me);
   // admin can be 'admin' or 'superadmin'
