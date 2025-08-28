@@ -10,12 +10,12 @@ export async function delaySecs(seconds: number, jitter: number = 0): Promise<vo
 
   const interval = setInterval(() => {
     if (remaining > 0) {
-      console.log(`Remaining seconds: ${remaining}`);
+      process.stdout.write(`\rRemaining seconds: ${remaining} `);
       remaining--;
     }
   }, 1000);
 
   await new Promise((res) => setTimeout(res, ms));
   clearInterval(interval);
-  console.log("Delay finished");
+  process.stdout.write("\rDelay finished          \n");
 }
