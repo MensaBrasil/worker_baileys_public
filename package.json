@@ -5,7 +5,7 @@
   "description": "Baileys version of whatsapp worker written in typescript.",
   "main": "index.js",
   "scripts": {
-    "start": "node --max-old-space-size=2048 --loader ts-node/esm src/index.ts",
+    "start": "pnpm build && node dist/index.js",
     "build": "node --max-old-space-size=2048 ./node_modules/typescript/bin/tsc -b",
     "check": "node --max-old-space-size=2048 ./node_modules/typescript/bin/tsc --noEmit",
     "run-prod": "node dist/index.js",
@@ -45,6 +45,7 @@
     "eslint-plugin-prettier": "^5.5.4",
     "globals": "^16.3.0",
     "jiti": "^2.5.1",
+    "pino-pretty": "^13.1.1",
     "prettier": "^3.6.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2",
