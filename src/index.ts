@@ -5,42 +5,54 @@ import {
   DisconnectReason,
   fetchLatestBaileysVersion,
   Browsers,
-  type WASocket,
+  type ConnectionState,
 } from "baileys";
 import qrcode from "qrcode-terminal";
 import logger from "./utils/logger";
 
 import { BoomError } from "./types/errorTypes";
 import { processAddQueue } from "./core/addTask";
+import { processRemoveQueue } from "./core/removeTask";
 import type { Worker } from "./types/addTaskTypes";
 import { getAllWhatsAppWorkers } from "./db/pgsql";
+import { testRedisConnection } from "./db/redis";
+import { delaySecs } from "./utils/delay";
+import { addNewAuthorizations, checkAuth } from "./core/authTask";
+import { handleMessageModeration } from "./core/moderationTask";
 
 configDotenv({ path: ".env" });
 
-const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+let addMode = process.argv.includes("--add");
+let removeMode = process.argv.includes("--remove");
+let moderationMode = process.argv.includes("--moderation");
+let authMode = process.argv.includes("--auth");
 
-/**
- * Starts a loop that consumes the add queue.
- * Returns a function to stop the loop (used during reconnections/closures).
- */
-function startAddLoop(sock: WASocket, worker: Worker) {
-  let stopped = false;
-
-  (async function loop() {
-    while (!stopped) {
-      try {
-        await processAddQueue(sock, worker);
-      } catch (err) {
-        logger.error({ err }, "[addLoop] error processing queue");
-      }
-      await delay(1000);
-    }
-  })().catch((e) => logger.error({ err: e }, "[addLoop] fatal"));
-
-  return () => {
-    stopped = true;
-  };
+if (!addMode && !removeMode && !moderationMode && !authMode) {
+  logger.info(
+    "Normal mode selected! Additions, removals, moderation tasks, and authorization checks will be processed (when implemented).",
+  );
+  addMode = true;
+  removeMode = true;
+  moderationMode = true;
+  authMode = true;
+} else if (addMode && !removeMode && !moderationMode && !authMode) {
+  logger.info("Add mode selected! Only additions will be processed.");
+} else if (!addMode && removeMode && !moderationMode && !authMode) {
+  logger.info("Remove mode selected! Only removals will be processed (not yet implemented).");
+} else if (moderationMode) {
+  logger.info("Moderation mode selected! Only moderation tasks will be processed (not yet implemented).");
+} else if (authMode) {
+  logger.info("Authorization mode selected! Only authorization checks will be processed (not yet implemented).");
 }
+
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason }, "Unhandled Rejection");
+  process.exit(1);
+});
+
+const uptimeUrl = process.env.UPTIME_URL;
+
+let mainLoopStarted = false;
 
 async function main() {
   const { state, saveCreds } = await useMultiFileAuthState("./auth");
@@ -50,13 +62,11 @@ async function main() {
     version,
     auth: state,
     browser: Browsers.ubuntu("Desktop"),
-    logger: logger.child({ module: "baileys" }),
+    logger: logger.child({ module: "baileys" }, { level: (process.env.BAILEYS_LOG_LEVEL ?? "fatal") as string }),
     printQRInTerminal: false,
     markOnlineOnConnect: false,
     syncFullHistory: false,
   });
-
-  let stopAddLoop: (() => void) | null = null;
 
   sock.ev.on("connection.update", async ({ connection, qr, lastDisconnect }) => {
     if (qr) {
@@ -79,23 +89,134 @@ async function main() {
         phone: found.worker_phone,
       };
 
-      if (stopAddLoop) stopAddLoop();
+      await testRedisConnection();
 
-      stopAddLoop = startAddLoop(sock, worker);
+      // Initial authorization sweep (non-group chats/contacts)
+      try {
+        logger.info(`Running initial authorization check for worker: ${worker.phone}`);
+        await addNewAuthorizations(sock, worker.phone);
+      } catch (e) {
+        logger.warn({ err: e }, "Initial authorization check failed (continuing)");
+      }
+
+      if (mainLoopStarted) {
+        logger.warn("Main loop already started; skipping duplicate start.");
+        return;
+      }
+      mainLoopStarted = true;
+
+      (async function mainLoop() {
+        const startTime = Date.now();
+        while (true) {
+          try {
+            if (addMode) {
+              await processAddQueue(sock, worker);
+              await delaySecs(7, 13, 3);
+            }
+
+            if (removeMode) {
+              await processRemoveQueue(sock);
+              await delaySecs(7, 13, 3);
+            }
+
+            if (moderationMode) {
+              // Moderation is event-driven; handler is attached separately.
+            }
+
+            if (uptimeUrl) {
+              try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30_000);
+                await fetch(uptimeUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+              } catch (err) {
+                logger.warn({ err }, "Uptime check failed");
+              }
+            }
+
+            const currentTime = Date.now();
+            const elapsed = currentTime - startTime;
+            logger.info(`Process has been running for ${Math.floor(elapsed / 60_000)} minutes`);
+          } catch (err) {
+            logger.error({ err }, "[mainLoop] error");
+          }
+        }
+      })().catch((e) => logger.error({ err: e }, "[mainLoop] fatal"));
+
+      // Event-driven moderation/auth flows
+      if (moderationMode || authMode) {
+        sock.ev.on("messages.upsert", async ({ messages }) => {
+          for (const m of messages) {
+            const remote = m.key.remoteJid || "";
+            const isGroup = remote.endsWith("@g.us") || remote.endsWith("@newsletter");
+
+            if (moderationMode) {
+              await handleMessageModeration(sock, m);
+            }
+
+            if (authMode && !isGroup) {
+              const contactNumber = (remote.endsWith("@s.whatsapp.net") ? remote.split("@")[0] : remote) || "";
+              try {
+                await checkAuth(contactNumber, worker.phone);
+              } catch (e) {
+                logger.warn(
+                  { err: e, number: contactNumber },
+                  "Falha ao autorizar número a partir de mensagem recebida",
+                );
+              }
+            }
+          }
+        });
+      }
     }
 
     if (connection === "close") {
-      logger.info("[wa] connection closed.");
-      if (stopAddLoop) {
-        stopAddLoop();
-        stopAddLoop = null;
+      const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
+      const isLoggedOut = code === DisconnectReason.loggedOut;
+
+      if (isLoggedOut) {
+        logger.fatal({ code }, "[wa] connection closed: Session logged out. Delete ./auth and link again.");
+        process.exit(1);
       }
 
-      const code = (lastDisconnect?.error as BoomError)?.output?.statusCode;
-      if (code !== DisconnectReason.loggedOut) {
-        setTimeout(() => void main(), 3000);
-      } else {
-        logger.error("Session logged out. Delete ./auth and link again.");
+      logger.warn({ code }, "[wa] connection closed; attempting auto-reconnect...");
+
+      // Wait for Baileys' internal retry to succeed within a timeout window.
+      const waitForReconnect = (timeoutMs: number) =>
+        new Promise<void>((resolve, reject) => {
+          const onUpdate = (u: Partial<ConnectionState>) => {
+            const c = u.connection;
+            const sc = (u.lastDisconnect?.error as BoomError | undefined)?.output?.statusCode;
+            if (c === "open") {
+              cleanup();
+              resolve();
+            } else if (sc === DisconnectReason.loggedOut) {
+              cleanup();
+              reject(new Error("logged_out"));
+            }
+          };
+
+          const cleanup = () => {
+            clearTimeout(timer);
+            sock.ev.off("connection.update", onUpdate);
+          };
+
+          const timer = setTimeout(() => {
+            cleanup();
+            reject(new Error("reconnect_timeout"));
+          }, timeoutMs);
+
+          sock.ev.on("connection.update", onUpdate);
+        });
+
+      try {
+        await waitForReconnect(60_000);
+        logger.info("[wa] reconnect successful.");
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const reason = msg === "logged_out" ? "Session logged out during retry" : "Reconnect timeout";
+        logger.fatal({ code, reason }, "[wa] reconnect failed; exiting.");
+        process.exit(1);
       }
     }
   });
