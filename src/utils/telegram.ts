@@ -5,14 +5,21 @@ configDotenv({ path: ".env" });
 
 /**
  * Minimal Telegram Bot API client using fetch (no extra deps).
+ * Logs both attempts and outcomes to help diagnose failures.
  */
 async function telegramRequest(method: string, payload: Record<string, unknown>): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    // Silently skip if token not set
+    console.warn("[telegram] Skipping request: TELEGRAM_BOT_TOKEN not set.");
     return;
   }
   const url = `https://api.telegram.org/bot${token}/${method}`;
+
+  const chatId = (payload as { chat_id?: string | number }).chat_id;
+  const t = (payload as { text?: string }).text;
+  const preview = t ? (t.length > 140 ? `${t.slice(0, 140)}… (${t.length} chars)` : t) : undefined;
+
+  console.log(`[telegram] -> ${method} to chat ${chatId ?? "<unknown>"}` + (preview ? ` | preview: ${preview}` : ""));
 
   try {
     const controller = new AbortController();
@@ -24,10 +31,25 @@ async function telegramRequest(method: string, payload: Record<string, unknown>)
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
 
-      console.warn(`[telegram] Request failed: ${res.status} ${res.statusText} ${text}`);
+    const raw = await res.text().catch(() => "");
+
+    if (!res.ok) {
+      console.warn(`[telegram] HTTP ${res.status} ${res.statusText}. Body: ${raw}`);
+      return;
+    }
+
+    // Telegram returns JSON with { ok, result?, description? }
+    try {
+      const data = raw ? JSON.parse(raw) : {};
+      if (data?.ok) {
+        const mid = data?.result?.message_id ?? data?.result?.messageId ?? "<no-id>";
+        console.log(`[telegram] OK: ${method} delivered to ${chatId ?? "<unknown>"} (message_id=${mid}).`);
+      } else {
+        console.warn(`[telegram] API ok=false. Description: ${data?.description ?? "<none>"}. Raw: ${raw}`);
+      }
+    } catch (e) {
+      console.warn(`[telegram] Non-JSON response. Assuming success. Raw: ${raw}. ParseErr: ${String(e)}`);
     }
   } catch (err) {
     console.warn("[telegram] Error sending request:", err);
@@ -39,7 +61,10 @@ export async function sendTelegramMessage(
   text: string,
   parseMode: "HTML" | "MarkdownV2" | undefined = "HTML",
 ): Promise<void> {
-  if (!chatIdEnv) return;
+  if (!chatIdEnv) {
+    console.warn("[telegram] Skipping sendMessage: chat id env not set.");
+    return;
+  }
   await telegramRequest("sendMessage", {
     chat_id: chatIdEnv,
     text,
@@ -78,14 +103,21 @@ function escapeHtml(str: string): string {
  */
 export async function notifyAdditionFailure(payload: AdditionFailurePayload): Promise<void> {
   const ts = new Date().toISOString();
-  const lines = ["<b>⚠️ FALHA NA INCLUSÃO ⚠️</b>", `<b>Horário:</b> ${ts}`, `<b>Request ID:</b> ${payload.requestId}`];
+  const lines = [
+    "<b>⚠️ FALHA NA INCLUSÃO ⚠️</b>",
+    `<b>Horário:</b> ${ts}`,
+    `<b>Request ID:</b> ${escapeHtml(String(payload.requestId))}`,
+  ];
 
-  if (payload.registrationId != null) lines.push(`<b>Registration ID:</b> ${payload.registrationId}`);
+  if (payload.registrationId != null)
+    lines.push(`<b>Registration ID:</b> ${escapeHtml(String(payload.registrationId))}`);
   if (payload.groupName || payload.groupId) {
-    const grp = payload.groupName ? `${payload.groupName} (${payload.groupId ?? ""})` : payload.groupId;
+    const grp = payload.groupName
+      ? `${escapeHtml(payload.groupName)} (${escapeHtml(String(payload.groupId ?? ""))})`
+      : escapeHtml(String(payload.groupId));
     lines.push(`<b>Grupo:</b> ${grp}`);
   }
-  lines.push(`<b>Erro:</b> ${payload.reason}`);
+  lines.push(`<b>Erro:</b> ${escapeHtml(payload.reason)}`);
 
   await sendTelegramMessage(process.env.TELEGRAM_FAILURES_CHAT_ID, lines.join("\n"), "HTML");
 }

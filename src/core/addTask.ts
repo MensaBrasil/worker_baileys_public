@@ -105,6 +105,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
       item,
       groupName: meta.subject ?? null,
     });
+    await safeRegisterAttempt(item.request_id);
     return baseResult(0, 0);
   }
 
@@ -117,6 +118,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
       item,
       groupName: meta.subject ?? null,
     });
+    await safeRegisterAttempt(item.request_id);
     return baseResult(0, 0);
   }
 
@@ -181,10 +183,19 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
     );
   } else {
     await registerWhatsappAddAttempt(item.request_id);
-    console.log(ansi.red(`Não foi possível cumprir request nº ${item.request_id} (reg=${item.registration_id}).`));
+    const baseMsg = `Não foi possível cumprir request nº ${item.request_id} (reg=${item.registration_id}).`;
+    console.log(ansi.red(baseMsg));
+    let telegramReason = baseMsg;
     if (notAuthorizedNumbers.length) {
-      console.log(ansi.red(`Números não autorizados: ${notAuthorizedNumbers.join(", ")}`));
+      const na = `Números não autorizados: ${notAuthorizedNumbers.join(", ")}`;
+      console.log(ansi.red(na));
+      telegramReason += `\n${na}`;
     }
+    // Envia notificação ao Telegram com resumo da falha geral
+    await safeNotifyFailure(item.request_id, telegramReason, {
+      item,
+      groupName: meta.subject ?? null,
+    });
   }
 
   return results;
@@ -342,6 +353,14 @@ async function safeNotifyFailure(
     await notifyAdditionFailure(payload);
   } catch (e) {
     console.warn(`sendAdditionFailedReason falhou: ${String((e as Error)?.message ?? e)}`);
+  }
+}
+
+async function safeRegisterAttempt(requestId: string | number): Promise<void> {
+  try {
+    await registerWhatsappAddAttempt(Number(requestId));
+  } catch (e) {
+    console.warn(`registerWhatsappAddAttempt falhou: ${String((e as Error)?.message ?? e)}`);
   }
 }
 
