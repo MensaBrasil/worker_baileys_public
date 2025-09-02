@@ -1,6 +1,8 @@
 import { config as configDotenv } from "dotenv";
 import type { BaileysEventMap, GroupMetadata, proto, WASocket } from "baileys";
 import { sendTelegramFlaggedLog } from "../utils/telegram";
+import logger from "../utils/logger";
+import { findRegistrationIdByPhone, insertWhatsAppModeration } from "../db/pgsql";
 import { checkGroupTypeByMeta } from "../utils/checkGroupType";
 import type { ModerationResponse, ModerationResult } from "../types/moderationTypes";
 
@@ -9,10 +11,11 @@ configDotenv({ path: ".env" });
 const groupInviteRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{10,}/i;
 const shortenerRegex =
   /https?:\/\/(?:www\.)?(bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|buff\.ly|bitly\.com|shorturl\.at|cutt\.ly|rb\.gy)\/\S+/i;
+const apiWhatsAppRegex = /https?:\/\/api\.whatsapp\.com\/\S+/i;
+const waMeRegex = /https?:\/\/wa\.me\/\S+/i;
 
 function contentText(m: proto.IMessage | null | undefined): string {
   if (!m) return "";
-  // common text containers
   if (m.conversation) return m.conversation;
   if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
   if (m.imageMessage?.caption) return m.imageMessage.caption;
@@ -29,21 +32,26 @@ async function getGroupMetadata(sock: WASocket, jid: string): Promise<GroupMetad
   }
 }
 
-async function deleteMessageIfAllowed(sock: WASocket, msg: proto.IWebMessageInfo, meta: GroupMetadata | null) {
+async function deleteMessageIfAllowed(
+  sock: WASocket,
+  msg: proto.IWebMessageInfo,
+  meta: GroupMetadata | null,
+): Promise<{ attempted: boolean; deleted: boolean } | void> {
   try {
     if (!msg.key?.remoteJid) return;
     const fromJid = msg.key.remoteJid;
     const senderJid = msg.key.participant || msg.key.remoteJid;
     const isGroup = fromJid.endsWith("@g.us");
-    if (!isGroup || !meta) return;
+    if (!isGroup || !meta) return { attempted: false, deleted: false };
 
     const p = meta.participants?.find((x) => x.id === senderJid);
     const isSenderAdmin = Boolean(p?.admin);
-    if (isSenderAdmin) return; // Don't delete admin messages
+    if (isSenderAdmin) return { attempted: false, deleted: false }; // Don't delete admin messages
 
     await sock.sendMessage(fromJid, { delete: msg.key });
+    return { attempted: true, deleted: true };
   } catch {
-    // ignore delete failures
+    return { attempted: true, deleted: false };
   }
 }
 
@@ -84,8 +92,59 @@ export async function handleMessageModeration(
 
   // Link deletion for non-admins (toggle via ENABLE_LINK_MODERATION=true)
   const enableLinkModeration = process.env.ENABLE_LINK_MODERATION === "true";
-  if (enableLinkModeration && (groupInviteRegex.test(text) || shortenerRegex.test(text)) && meta) {
-    await deleteMessageIfAllowed(sock, msg, meta);
+  const hasModeratableLink =
+    groupInviteRegex.test(text) || shortenerRegex.test(text) || apiWhatsAppRegex.test(text) || waMeRegex.test(text);
+
+  if (enableLinkModeration && hasModeratableLink && meta) {
+    const deletion = await deleteMessageIfAllowed(sock, msg, meta);
+
+    // Persist moderation only when deletion was attempted (log outcome)
+    if (deletion && deletion.attempted) {
+      const fromJid = msg.key.remoteJid || "";
+      const groupId = fromJid.endsWith("@g.us") ? fromJid.replace(/@g\.us$/, "") : fromJid;
+      const senderJid = msg.key.participant || msg.key.remoteJid || "";
+      const phone = (senderJid.split("@")[0] || "").replace(/\D/g, "");
+      const deletionReason = groupInviteRegex.test(text)
+        ? "group_invite_link"
+        : shortenerRegex.test(text)
+          ? "shortened_link"
+          : apiWhatsAppRegex.test(text)
+            ? "api_whatsapp_link"
+            : waMeRegex.test(text)
+              ? "wa_me_link"
+              : "link";
+
+      if (deletion.deleted) {
+        logger.info({ phone, groupId, reason: deletionReason }, "Moderation: link deleted successfully");
+      } else {
+        logger.warn({ phone, groupId, reason: deletionReason }, "Moderation: link deletion failed");
+      }
+
+      try {
+        // Try to resolve registration_id if possible
+        let registrationId: number | null = null;
+        try {
+          registrationId = phone ? await findRegistrationIdByPhone(phone) : null;
+        } catch {
+          registrationId = null;
+        }
+
+        const ts = msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : undefined;
+
+        await insertWhatsAppModeration({
+          registration_id: registrationId,
+          group_id: groupId,
+          timestamp: ts,
+          deleted: Boolean(deletion.deleted),
+          reason: deletionReason,
+          phone,
+          content: text || null,
+        });
+        logger.info({ phone, groupId, reason: deletionReason }, "Moderation: record stored in database");
+      } catch (err) {
+        logger.error({ err }, "Moderation: failed to store record in database");
+      }
+    }
   }
 
   // Optional moderation via OpenAI

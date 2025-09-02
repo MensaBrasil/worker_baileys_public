@@ -35,3 +35,14 @@ export interface WhatsAppAuthorizationInput {
   phone_number: string;
   worker_id: number;
 }
+
+/** Input shape to insert a moderation record */
+export interface WhatsAppModerationInput {
+  registration_id?: number | null;
+  group_id: string;
+  timestamp?: ISODateString; // default NOW() if omitted
+  deleted: boolean;
+  reason: string; // e.g., "group_invite_link" | "shortened_link"
+  phone: string; // E.164 digits only
+  content?: string | null; // message body/caption
+}

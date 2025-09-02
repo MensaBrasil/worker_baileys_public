@@ -7,6 +7,7 @@ import type {
   WhatsAppAuthorization,
   WhatsAppAuthorizationInput,
   WhatsAppWorker,
+  WhatsAppModerationInput,
 } from "../types/pgsqlTypes.ts";
 
 configDotenv({ path: ".env" });
@@ -246,4 +247,56 @@ export async function sendAdditionFailedReason(id: number, reason: string): Prom
     WHERE id = $1;
   `;
   await getPool().query(query, [id, reason]);
+}
+
+/**
+ * Finds a registration_id for a given phone using ONLY the last 8 digits.
+ * Looks up in phones, and legal_representatives (phone and alternative_phone).
+ */
+export async function findRegistrationIdByPhone(phone_number: string): Promise<number | null> {
+  const last8 = String(phone_number ?? "")
+    .replace(/\D/g, "")
+    .slice(-8);
+  if (!last8) return null;
+
+  const query = `
+    SELECT registration_id FROM phones WHERE RIGHT(phone_number, 8) = $1
+    UNION
+    SELECT registration_id FROM legal_representatives WHERE RIGHT(phone, 8) = $1
+    UNION
+    SELECT registration_id FROM legal_representatives WHERE RIGHT(alternative_phone, 8) = $1
+    LIMIT 1;
+  `;
+  const { rows } = await getPool().query(query, [last8]);
+  return rows.length ? (rows[0].registration_id as number) : null;
+}
+
+/**
+ * Inserts a moderation record into whatsapp_moderation.
+ * If timestamp is omitted, uses NOW().
+ */
+export async function insertWhatsAppModeration(input: WhatsAppModerationInput): Promise<void> {
+  const values: Array<string | number | boolean | null> = [
+    input.registration_id ?? null,
+    input.group_id,
+    input.deleted,
+    input.reason,
+    input.phone,
+    input.content ?? null,
+  ];
+
+  // If caller provided timestamp, we include it as a bound param; otherwise, use NOW().
+  const hasTimestamp = Boolean(input.timestamp);
+  const placeholderBase = hasTimestamp ? `($1, $2, $3, $4, $5, $6, $7)` : `($1, $2, NOW(), $3, $4, $5, $6)`;
+
+  const query = `
+    INSERT INTO whatsapp_moderation (registration_id, group_id, timestamp, deleted, reason, phone, content)
+    VALUES ${placeholderBase};
+  `;
+
+  const finalValues = hasTimestamp
+    ? [values[0], values[1], input.timestamp!, values[2], values[3], values[4], values[5]]
+    : values;
+
+  await getPool().query(query, finalValues);
 }
