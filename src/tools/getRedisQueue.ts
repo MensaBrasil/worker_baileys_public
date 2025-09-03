@@ -35,7 +35,7 @@ async function getQueue(queueKey: string): Promise<unknown[]> {
 }
 
 async function saveQueueToFile(queueData: unknown[], filename: string): Promise<void> {
-  const queueDir = path.join(process.cwd(), "queue");
+  const queueDir = path.join(process.cwd(), "tools_results");
 
   if (!fs.existsSync(queueDir)) {
     fs.mkdirSync(queueDir, { recursive: true });

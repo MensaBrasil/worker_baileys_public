@@ -300,3 +300,38 @@ export async function insertWhatsAppModeration(input: WhatsAppModerationInput): 
 
   await getPool().query(query, finalValues);
 }
+
+/**
+ * Returns phones for members under 18 years old, including their legal representatives' phones.
+ * This function attempts multiple common DOB column names to accommodate schema variations.
+ * It returns an array with registration_id, phone (digits as stored), and is_legal_rep flag.
+ */
+export async function getUnderageMemberAndLegalPhones(): Promise<
+  Array<{ registration_id: number; phone: string; is_legal_rep: boolean }>
+> {
+  const query = `
+    -- Member phones for registrations with birth_date < 18 years
+    SELECT r.registration_id, p.phone_number AS phone, FALSE AS is_legal_rep
+    FROM registration r
+    JOIN phones p ON p.registration_id = r.registration_id
+    WHERE r.birth_date > (CURRENT_DATE - INTERVAL '18 years')
+
+    UNION ALL
+
+    -- Legal representative primary phone
+    SELECT r.registration_id, lr.phone AS phone, TRUE AS is_legal_rep
+    FROM registration r
+    JOIN legal_representatives lr ON lr.registration_id = r.registration_id
+    WHERE r.birth_date > (CURRENT_DATE - INTERVAL '18 years')
+
+    UNION ALL
+
+    -- Legal representative alternative phone (only if present)
+    SELECT r.registration_id, lr.alternative_phone AS phone, TRUE AS is_legal_rep
+    FROM registration r
+    JOIN legal_representatives lr ON lr.registration_id = r.registration_id
+    WHERE r.birth_date > (CURRENT_DATE - INTERVAL '18 years') AND lr.alternative_phone IS NOT NULL
+  `;
+  const { rows } = await getPool().query(query);
+  return rows as Array<{ registration_id: number; phone: string; is_legal_rep: boolean }>;
+}
