@@ -119,10 +119,6 @@ async function main() {
               await delaySecs(7, 13, 3);
             }
 
-            if (moderationMode) {
-              // Moderation is event-driven; handler is attached separately.
-            }
-
             if (uptimeUrl) {
               try {
                 const controller = new AbortController();

@@ -5,6 +5,7 @@ import { AddAttemptResult, AddProcessResult, MemberPhone, Worker } from "../type
 import type { MemberStatus } from "../types/pgsqlTypes";
 import { AddQueueItem } from "../types/redisTypes";
 import { phoneToUserJid, asGroupJid } from "../utils/phoneToJid";
+import { isParticipantAdmin } from "../utils/waParticipants";
 import { delaySecs } from "../utils/delay";
 import {
   getMemberPhoneNumbers,
@@ -315,11 +316,10 @@ async function safeGroupMetadata(sock: WASocket, groupJid: string): Promise<Grou
 
 /** Checks if the bot itself is admin/superadmin in the group */
 function checkIfSelfIsAdmin(sock: WASocket, meta: GroupMetadata): boolean {
-  const meBare = sock.user?.id?.split(":")[0];
-  const me = meBare ? `${meBare}@s.whatsapp.net` : undefined;
-  if (!me) return false;
-  const self = meta.participants?.find((p) => p.id === me);
-  return Boolean(self?.admin);
+  // Match the bot user against participants by numeric identity (jid/lid safe)
+  const selfId = sock.user?.id;
+  if (!selfId) return false;
+  return isParticipantAdmin(meta, selfId);
 }
 
 async function safeRecordEntry(

@@ -6,6 +6,7 @@ import { recordUserExitFromGroup } from "../db/pgsql";
 import { notifyRemovalFailure } from "../utils/telegram";
 import { delaySecs } from "../utils/delay";
 import { phoneToUserJid, asGroupJid } from "../utils/phoneToJid";
+import { findParticipant } from "../utils/waParticipants";
 
 configDotenv({ path: ".env" });
 
@@ -146,7 +147,7 @@ export async function removeMemberFromGroup(
         console.log(ansi.yellow(`${msg} Pulando remoção na comunidade.`));
         return { removed: false, removalType: null, groupName: null, errorReason: msg };
       } else {
-        const participant = community.participants?.find((p) => p.id === userJid);
+        const participant = findParticipant(community, userJid);
         if (!participant) {
           const msg = `Participante ${phone} não encontrado na comunidade ${community.subject ?? communityJid} (${communityId}).`;
           console.log(ansi.yellow(msg));
@@ -187,7 +188,7 @@ export async function removeMemberFromGroup(
       return { removed: false, removalType: null, groupName: null, errorReason: msg };
     }
 
-    const participant = group.participants?.find((p) => p.id === userJid);
+    const participant = findParticipant(group, userJid);
     if (!participant) {
       const msg = `Participante ${phone} não encontrado no grupo ${group.subject ?? groupJid}.`;
       console.log(ansi.red(msg));

@@ -1,6 +1,7 @@
 import { config as configDotenv } from "dotenv";
 import type { BaileysEventMap, GroupMetadata, proto, WASocket } from "baileys";
 import { sendTelegramFlaggedLog } from "../utils/telegram";
+import { findParticipant } from "../utils/waParticipants";
 import logger from "../utils/logger";
 import { findRegistrationIdByPhone, insertWhatsAppModeration } from "../db/pgsql";
 import { checkGroupTypeByMeta } from "../utils/checkGroupType";
@@ -11,8 +12,11 @@ configDotenv({ path: ".env" });
 const groupInviteRegex = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{10,}/i;
 const shortenerRegex =
   /https?:\/\/(?:www\.)?(bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|buff\.ly|bitly\.com|shorturl\.at|cutt\.ly|rb\.gy)\/\S+/i;
-const apiWhatsAppRegex = /https?:\/\/api\.whatsapp\.com\/\S+/i;
-const waMeRegex = /https?:\/\/wa\.me\/\S+/i;
+// Match api.whatsapp.com links, including obfuscated dots like api[.]whatsapp[.]com,
+// with or without scheme and with optional path/query
+const apiWhatsAppRegex = /(?:https?:\/\/)?(?:www\.)?api(?:\.|\[\.\])whatsapp(?:\.|\[\.\])com(?:\/\S*)?/i;
+// Match wa.me links, including obfuscated dots wa[.]me, with or without scheme and optional path
+const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
 
 function contentText(m: proto.IMessage | null | undefined): string {
   if (!m) return "";
@@ -44,7 +48,7 @@ async function deleteMessageIfAllowed(
     const isGroup = fromJid.endsWith("@g.us");
     if (!isGroup || !meta) return { attempted: false, deleted: false };
 
-    const p = meta.participants?.find((x) => x.id === senderJid);
+    const p = findParticipant(meta, senderJid);
     const isSenderAdmin = Boolean(p?.admin);
     if (isSenderAdmin) return { attempted: false, deleted: false }; // Don't delete admin messages
 
