@@ -28,21 +28,19 @@ let moderationMode = process.argv.includes("--moderation");
 let authMode = process.argv.includes("--auth");
 
 if (!addMode && !removeMode && !moderationMode && !authMode) {
-  logger.info(
-    "Normal mode selected! Additions, removals, moderation tasks, and authorization checks will be processed (when implemented).",
-  );
   addMode = true;
   removeMode = true;
   moderationMode = true;
   authMode = true;
-} else if (addMode && !removeMode && !moderationMode && !authMode) {
-  logger.info("Add mode selected! Only additions will be processed.");
-} else if (!addMode && removeMode && !moderationMode && !authMode) {
-  logger.info("Remove mode selected! Only removals will be processed (not yet implemented).");
-} else if (moderationMode) {
-  logger.info("Moderation mode selected! Only moderation tasks will be processed (not yet implemented).");
-} else if (authMode) {
-  logger.info("Authorization mode selected! Only authorization checks will be processed (not yet implemented).");
+  logger.info("Normal mode (default). All modes active: add, remove, moderation, auth.");
+} else {
+  const activeModes: string[] = [];
+  if (addMode) activeModes.push("add");
+  if (removeMode) activeModes.push("remove");
+  if (moderationMode) activeModes.push("moderation");
+  if (authMode) activeModes.push("auth");
+
+  logger.info(`Active modes: ${activeModes.join(", ")}`);
 }
 
 process.on("unhandledRejection", (reason) => {
