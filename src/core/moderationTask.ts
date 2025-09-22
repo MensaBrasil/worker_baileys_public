@@ -22,7 +22,6 @@ const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
 const communityStemRegex = /communi/i;
 const urlLikeRegex = /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9][\w-]*\.)+[a-z0-9-]{2,}(?:\/[^\s]*)?/gi;
 
-
 function normalizeMockedUrlText(text: string): string {
   return text
     .replace(/\[\s*\.\s*\]/g, ".")
@@ -46,11 +45,15 @@ const trailingUrlPunctuation = new Set([")", ">", '"', "'", "`", ",", ".", "!", 
 function stripUrlPunctuation(candidate: string): string {
   let value = candidate.trim();
 
-  while (value && leadingUrlPunctuation.has(value[0])) {
+  while (value) {
+    const leadingChar = value[0];
+    if (!leadingChar || !leadingUrlPunctuation.has(leadingChar)) break;
     value = value.slice(1).trimStart();
   }
 
-  while (value && trailingUrlPunctuation.has(value[value.length - 1])) {
+  while (value) {
+    const trailingChar = value[value.length - 1];
+    if (!trailingChar || !trailingUrlPunctuation.has(trailingChar)) break;
     value = value.slice(0, -1).trimEnd();
   }
 
@@ -74,7 +77,7 @@ function isDomainLike(candidate: string): boolean {
     if (labels.length < 2) return false;
 
     const tld = labels[labels.length - 1];
-    if (!/^[a-z0-9-]{2,}$/i.test(tld)) return false;
+    if (!tld || !/^[a-z0-9-]{2,}$/i.test(tld)) return false;
 
     return true;
   } catch {
@@ -91,7 +94,7 @@ function containsCommunityUrl(text: string): boolean {
     if (!communityStemRegex.test(candidate)) return false;
     return isDomainLike(candidate);
   });
-
+}
 
 function contentText(m: proto.IMessage | null | undefined): string {
   if (!m) return "";
@@ -179,9 +182,7 @@ export async function handleMessageModeration(
     shortenerRegex.test(text) ||
     apiWhatsAppRegex.test(text) ||
     waMeRegex.test(text) ||
-
     hasCommunityLink;
-
 
   if (enableLinkModeration && hasModeratableLink && meta) {
     const deletion = await deleteMessageIfAllowed(sock, msg, meta);
@@ -192,20 +193,20 @@ export async function handleMessageModeration(
       const groupId = fromJid.endsWith("@g.us") ? fromJid.replace(/@g\.us$/, "") : fromJid;
       const senderJid = msg.key.participant || msg.key.remoteJid || "";
       const phone = (senderJid.split("@")[0] || "").replace(/\D/g, "");
-      const deletionReason = groupInviteRegex.test(text)
-        ? "group_invite_link"
-        : shortenerRegex.test(text)
-          ? "shortened_link"
-          : apiWhatsAppRegex.test(text)
-            ? "api_whatsapp_link"
-            : waMeRegex.test(text)
-              ? "wa_me_link"
-
-              : hasCommunityLink
-
-                ? "community_link"
-                : "link";
-
+      let deletionReason: string;
+      if (groupInviteRegex.test(text)) {
+        deletionReason = "group_invite_link";
+      } else if (shortenerRegex.test(text)) {
+        deletionReason = "shortened_link";
+      } else if (apiWhatsAppRegex.test(text)) {
+        deletionReason = "api_whatsapp_link";
+      } else if (waMeRegex.test(text)) {
+        deletionReason = "wa_me_link";
+      } else if (hasCommunityLink) {
+        deletionReason = "community_link";
+      } else {
+        deletionReason = "link";
+      }
       if (deletion.deleted) {
         logger.info({ phone, groupId, reason: deletionReason }, "Moderation: link deleted successfully");
       } else {
