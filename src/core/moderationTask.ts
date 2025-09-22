@@ -17,6 +17,78 @@ const shortenerRegex =
 const apiWhatsAppRegex = /(?:https?:\/\/)?(?:www\.)?api(?:\.|\[\.\])whatsapp(?:\.|\[\.\])com(?:\/\S*)?/i;
 // Match wa.me links, including obfuscated dots wa[.]me, with or without scheme and optional path
 const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
+// Detect URLs (real or mocked) containing the "communi" stem
+const communityStemRegex = /communi/i;
+const urlLikeRegex = /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9][\w-]*\.)+[a-z0-9-]{2,}(?:\/[^\s]*)?/gi;
+
+function normalizeMockedUrlText(text: string): string {
+  return text
+    .replace(/\[\s*\.\s*\]/g, ".")
+    .replace(/\(\s*dot\s*\)/gi, ".")
+    .replace(/\[\s*dot\s*\]/gi, ".")
+    .replace(/\bdot\b/gi, ".")
+    .replace(/\(\s*slash\s*\)/gi, "/")
+    .replace(/\[\s*slash\s*\]/gi, "/")
+    .replace(/\bslash\b/gi, "/")
+    .replace(/(?:\u200b|\u200c|\u200d|\ufeff)/g, "")
+    .replace(/:\s*\/\s*\//g, "://")
+    .replace(/\/\s*\/+/g, "//")
+    .replace(/([a-z0-9])\s*\/\s*([a-z0-9])/gi, "$1/$2")
+    .replace(/([a-z0-9])\s*\.\s*([a-z0-9])/gi, "$1.$2");
+}
+
+const leadingUrlPunctuation = new Set(["(", "<", '"', "'", "`", "["]);
+const trailingUrlPunctuation = new Set([")", ">", '"', "'", "`", ",", ".", "!", "?", ";", ":", "\u2026", "]"]);
+
+function stripUrlPunctuation(candidate: string): string {
+  let value = candidate.trim();
+
+  while (value && leadingUrlPunctuation.has(value[0])) {
+    value = value.slice(1).trimStart();
+  }
+
+  while (value && trailingUrlPunctuation.has(value[value.length - 1])) {
+    value = value.slice(0, -1).trimEnd();
+  }
+
+  return value;
+}
+
+function isDomainLike(candidate: string): boolean {
+  let value = stripUrlPunctuation(candidate.trim());
+  if (!value) return false;
+
+  if (!/^https?:\/\//i.test(value)) {
+    value = value.startsWith("www.") ? `https://${value}` : `https://${value}`;
+  }
+
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname;
+    if (!hostname || !hostname.includes(".")) return false;
+
+    const labels = hostname.split(".").filter(Boolean);
+    if (labels.length < 2) return false;
+
+    const tld = labels[labels.length - 1];
+    if (!/^[a-z0-9-]{2,}$/i.test(tld)) return false;
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function containsCommunityUrl(text: string): boolean {
+  const matches = text.match(urlLikeRegex);
+  if (!matches) return false;
+
+  return matches.some((rawCandidate) => {
+    const candidate = stripUrlPunctuation(rawCandidate);
+    if (!communityStemRegex.test(candidate)) return false;
+    return isDomainLike(candidate);
+  });
+}
 
 function contentText(m: proto.IMessage | null | undefined): string {
   if (!m) return "";
@@ -92,12 +164,19 @@ export async function handleMessageModeration(
   if (!isGroup) return;
 
   const text = contentText(msg.message);
+  const normalizedText = normalizeMockedUrlText(text);
   const meta = await getGroupMetadata(sock, remote);
 
   // Link deletion for non-admins (toggle via ENABLE_LINK_MODERATION=true)
   const enableLinkModeration = process.env.ENABLE_LINK_MODERATION === "true";
+  const hasCommunityLink = containsCommunityUrl(normalizedText);
+
   const hasModeratableLink =
-    groupInviteRegex.test(text) || shortenerRegex.test(text) || apiWhatsAppRegex.test(text) || waMeRegex.test(text);
+    groupInviteRegex.test(text) ||
+    shortenerRegex.test(text) ||
+    apiWhatsAppRegex.test(text) ||
+    waMeRegex.test(text) ||
+    hasCommunityLink;
 
   if (enableLinkModeration && hasModeratableLink && meta) {
     const deletion = await deleteMessageIfAllowed(sock, msg, meta);
@@ -116,7 +195,9 @@ export async function handleMessageModeration(
             ? "api_whatsapp_link"
             : waMeRegex.test(text)
               ? "wa_me_link"
-              : "link";
+              : hasCommunityLink
+                ? "community_link"
+                : "link";
 
       if (deletion.deleted) {
         logger.info({ phone, groupId, reason: deletionReason }, "Moderation: link deleted successfully");
