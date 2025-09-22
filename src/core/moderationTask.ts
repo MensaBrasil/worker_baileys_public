@@ -17,8 +17,9 @@ const shortenerRegex =
 const apiWhatsAppRegex = /(?:https?:\/\/)?(?:www\.)?api(?:\.|\[\.\])whatsapp(?:\.|\[\.\])com(?:\/\S*)?/i;
 // Match wa.me links, including obfuscated dots wa[.]me, with or without scheme and optional path
 const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
-// Match community-related URLs or mocked URLs containing "communi"
-const communityUrlRegex = /(?:https?:\/\/|www\.)\S*communi\S*|\b\S*communi\S*(?:\.\S+|\/\S*|\?\S*)/i;
+// Match community-related URLs or mocked URLs containing "communi" with a domain-like structure
+const communityUrlRegex =
+  /(?:https?:\/\/|www\.)\S*communi\S*|\b(?=\S*communi)(?:[a-z0-9][\w-]*\.)+[a-z0-9-]{2,}(?:\/\S*)?/i;
 
 function normalizeMockedUrlText(text: string): string {
   return text
