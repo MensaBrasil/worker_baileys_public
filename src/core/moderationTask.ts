@@ -19,6 +19,7 @@ const apiWhatsAppRegex = /(?:https?:\/\/)?(?:www\.)?api(?:\.|\[\.\])whatsapp(?:\
 const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
 
 // Detect URLs (real or mocked) containing the "communi" stem
+const xCommunityRegex = /(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/i\/communities\/[^\s]+/i;
 const communityStemRegex = /communi/i;
 const urlLikeRegex = /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9][\w-]*\.)+[a-z0-9-]{2,}(?:\/[^\s]*)?/gi;
 
@@ -86,6 +87,8 @@ function isDomainLike(candidate: string): boolean {
 }
 
 function containsCommunityUrl(text: string): boolean {
+  if (xCommunityRegex.test(text)) return true;
+
   const matches = text.match(urlLikeRegex);
   if (!matches) return false;
 
