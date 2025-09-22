@@ -17,9 +17,11 @@ const shortenerRegex =
 const apiWhatsAppRegex = /(?:https?:\/\/)?(?:www\.)?api(?:\.|\[\.\])whatsapp(?:\.|\[\.\])com(?:\/\S*)?/i;
 // Match wa.me links, including obfuscated dots wa[.]me, with or without scheme and optional path
 const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
+
 // Detect URLs (real or mocked) containing the "communi" stem
 const communityStemRegex = /communi/i;
 const urlLikeRegex = /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9][\w-]*\.)+[a-z0-9-]{2,}(?:\/[^\s]*)?/gi;
+
 
 function normalizeMockedUrlText(text: string): string {
   return text
@@ -29,6 +31,7 @@ function normalizeMockedUrlText(text: string): string {
     .replace(/\bdot\b/gi, ".")
     .replace(/\(\s*slash\s*\)/gi, "/")
     .replace(/\[\s*slash\s*\]/gi, "/")
+
     .replace(/\bslash\b/gi, "/")
     .replace(/(?:\u200b|\u200c|\u200d|\ufeff)/g, "")
     .replace(/:\s*\/\s*\//g, "://")
@@ -88,7 +91,7 @@ function containsCommunityUrl(text: string): boolean {
     if (!communityStemRegex.test(candidate)) return false;
     return isDomainLike(candidate);
   });
-}
+
 
 function contentText(m: proto.IMessage | null | undefined): string {
   if (!m) return "";
@@ -176,7 +179,9 @@ export async function handleMessageModeration(
     shortenerRegex.test(text) ||
     apiWhatsAppRegex.test(text) ||
     waMeRegex.test(text) ||
+
     hasCommunityLink;
+
 
   if (enableLinkModeration && hasModeratableLink && meta) {
     const deletion = await deleteMessageIfAllowed(sock, msg, meta);
@@ -195,7 +200,9 @@ export async function handleMessageModeration(
             ? "api_whatsapp_link"
             : waMeRegex.test(text)
               ? "wa_me_link"
+
               : hasCommunityLink
+
                 ? "community_link"
                 : "link";
 
