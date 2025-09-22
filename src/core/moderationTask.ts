@@ -17,6 +17,19 @@ const shortenerRegex =
 const apiWhatsAppRegex = /(?:https?:\/\/)?(?:www\.)?api(?:\.|\[\.\])whatsapp(?:\.|\[\.\])com(?:\/\S*)?/i;
 // Match wa.me links, including obfuscated dots wa[.]me, with or without scheme and optional path
 const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
+// Match community-related URLs or mocked URLs containing "communi"
+const communityUrlRegex = /(?:https?:\/\/|www\.)\S*communi\S*|\b\S*communi\S*(?:\.\S+|\/\S*|\?\S*)/i;
+
+function normalizeMockedUrlText(text: string): string {
+  return text
+    .replace(/\[\s*\.\s*\]/g, ".")
+    .replace(/\(\s*dot\s*\)/gi, ".")
+    .replace(/\[\s*dot\s*\]/gi, ".")
+    .replace(/\bdot\b/gi, ".")
+    .replace(/\(\s*slash\s*\)/gi, "/")
+    .replace(/\[\s*slash\s*\]/gi, "/")
+    .replace(/\bslash\b/gi, "/");
+}
 
 function contentText(m: proto.IMessage | null | undefined): string {
   if (!m) return "";
@@ -92,12 +105,17 @@ export async function handleMessageModeration(
   if (!isGroup) return;
 
   const text = contentText(msg.message);
+  const normalizedText = normalizeMockedUrlText(text);
   const meta = await getGroupMetadata(sock, remote);
 
   // Link deletion for non-admins (toggle via ENABLE_LINK_MODERATION=true)
   const enableLinkModeration = process.env.ENABLE_LINK_MODERATION === "true";
   const hasModeratableLink =
-    groupInviteRegex.test(text) || shortenerRegex.test(text) || apiWhatsAppRegex.test(text) || waMeRegex.test(text);
+    groupInviteRegex.test(text) ||
+    shortenerRegex.test(text) ||
+    apiWhatsAppRegex.test(text) ||
+    waMeRegex.test(text) ||
+    communityUrlRegex.test(normalizedText);
 
   if (enableLinkModeration && hasModeratableLink && meta) {
     const deletion = await deleteMessageIfAllowed(sock, msg, meta);
@@ -116,7 +134,9 @@ export async function handleMessageModeration(
             ? "api_whatsapp_link"
             : waMeRegex.test(text)
               ? "wa_me_link"
-              : "link";
+              : communityUrlRegex.test(normalizedText)
+                ? "community_link"
+                : "link";
 
       if (deletion.deleted) {
         logger.info({ phone, groupId, reason: deletionReason }, "Moderation: link deleted successfully");
