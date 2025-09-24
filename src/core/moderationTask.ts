@@ -18,10 +18,11 @@ const apiWhatsAppRegex = /(?:https?:\/\/)?(?:www\.)?api(?:\.|\[\.\])whatsapp(?:\
 // Match wa.me links, including obfuscated dots wa[.]me, with or without scheme and optional path
 const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
 
-// Detect URLs (real or mocked) containing the "communi" stem
+// Detect URLs (real or mocked) containing community/group keywords
 const xCommunityRegex = /(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/i\/communities\/[^\s]+/i;
-const communityStemRegex = /communi/i;
+const communityKeywordRegex = /(commun\w*|group\w*)/i;
 const urlLikeRegex = /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9][\w-]*\.)+[a-z0-9-]{2,}(?:\/[^\s]*)?/gi;
+const bannedCommunityId = "1968352772362780861";
 
 function normalizeMockedUrlText(text: string): string {
   return text
@@ -33,6 +34,8 @@ function normalizeMockedUrlText(text: string): string {
     .replace(/\[\s*slash\s*\]/gi, "/")
 
     .replace(/\bslash\b/gi, "/")
+    .replace(/\bponto\b/gi, ".")
+    .replace(/([a-z0-9])ponto([a-z0-9])/gi, "$1.$2")
     .replace(/(?:\u200b|\u200c|\u200d|\ufeff)/g, "")
     .replace(/:\s*\/\s*\//g, "://")
     .replace(/\/\s*\/+/g, "//")
@@ -94,8 +97,14 @@ function containsCommunityUrl(text: string): boolean {
 
   return matches.some((rawCandidate) => {
     const candidate = stripUrlPunctuation(rawCandidate);
-    if (!communityStemRegex.test(candidate)) return false;
-    return isDomainLike(candidate);
+    if (!candidate) return false;
+    if (!communityKeywordRegex.test(candidate)) return false;
+
+    if (isDomainLike(candidate)) return true;
+
+    if (/^(?:https?:\/\/|www\.)/i.test(candidate) && candidate.includes("/")) return true;
+
+    return false;
   });
 }
 
@@ -179,13 +188,15 @@ export async function handleMessageModeration(
   // Link deletion for non-admins (toggle via ENABLE_LINK_MODERATION=true)
   const enableLinkModeration = process.env.ENABLE_LINK_MODERATION === "true";
   const hasCommunityLink = containsCommunityUrl(normalizedText);
+  const hasBannedCommunityId = normalizedText.includes(bannedCommunityId);
 
   const hasModeratableLink =
     groupInviteRegex.test(text) ||
     shortenerRegex.test(text) ||
     apiWhatsAppRegex.test(text) ||
     waMeRegex.test(text) ||
-    hasCommunityLink;
+    hasCommunityLink ||
+    hasBannedCommunityId;
 
   if (enableLinkModeration && hasModeratableLink && meta) {
     const deletion = await deleteMessageIfAllowed(sock, msg, meta);
@@ -205,6 +216,8 @@ export async function handleMessageModeration(
         deletionReason = "api_whatsapp_link";
       } else if (waMeRegex.test(text)) {
         deletionReason = "wa_me_link";
+      } else if (hasBannedCommunityId) {
+        deletionReason = "community_id";
       } else if (hasCommunityLink) {
         deletionReason = "community_link";
       } else {
