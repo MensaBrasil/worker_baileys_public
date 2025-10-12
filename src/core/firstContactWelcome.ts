@@ -143,7 +143,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
       for (const member of newMembers) {
         const mentionTag = `@${member.split("@")[0]}`;
         const welcomeText = [
-          `Oi ${mentionTag}, novo Mensan, tudo bem?`,
+          `Oi ${mentionTag}, tudo bem? 🪇`,
           "Seja bem vindo (a)!",
           "Se quiser se apresentar, temos um formulário de sugestão",
           "",
