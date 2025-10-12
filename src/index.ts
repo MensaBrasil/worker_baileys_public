@@ -19,6 +19,7 @@ import { testRedisConnection } from "./db/redis";
 import { delaySecs } from "./utils/delay";
 import { addNewAuthorizations, checkAuth } from "./core/authTask";
 import { handleMessageModeration } from "./core/moderationTask";
+import { registerFirstContactWelcome } from "./core/firstContactWelcome";
 
 configDotenv({ path: ".env" });
 
@@ -102,6 +103,8 @@ async function main() {
         return;
       }
       mainLoopStarted = true;
+
+      registerFirstContactWelcome(sock);
 
       (async function mainLoop() {
         const startTime = Date.now();
