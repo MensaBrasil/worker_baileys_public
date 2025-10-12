@@ -79,6 +79,8 @@ async function main() {
       const workerPhone = sock.user?.id?.split(":")[0]?.replace(/\D/g, "");
       if (!workerPhone) throw new Error("Unable to determine worker phone from Baileys instance.");
 
+      registerFirstContactWelcome(sock);
+
       const workers = await getAllWhatsAppWorkers();
       const found = workers.find((w) => w.worker_phone.replace(/\D/g, "") === workerPhone);
       if (!found) throw new Error(`Worker phone ${workerPhone} not found in database.`);
@@ -103,8 +105,6 @@ async function main() {
         return;
       }
       mainLoopStarted = true;
-
-      registerFirstContactWelcome(sock);
 
       (async function mainLoop() {
         const startTime = Date.now();
