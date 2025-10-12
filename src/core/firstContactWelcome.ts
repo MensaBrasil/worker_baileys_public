@@ -66,10 +66,7 @@ async function ensureGroupCached(
     cache.set(update.id, normalized);
     return normalized === normalizedTargetName;
   } catch (err) {
-    logger.warn(
-      { err, groupId: update.id },
-      "Falha ao obter metadata do grupo para regra de primeiro contato",
-    );
+    logger.warn({ err, groupId: update.id }, "Falha ao obter metadata do grupo para regra de primeiro contato");
     return false;
   }
 }
@@ -94,10 +91,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
   const groupNameCache = new Map<string, string>();
   const botJid = sock.user?.id;
 
-  logger.info(
-    { groupName: targetGroupName },
-    "Regra de primeiro contato ativada; aguardando novos participantes.",
-  );
+  logger.info({ groupName: targetGroupName }, "Regra de primeiro contato ativada; aguardando novos participantes.");
 
   void getWelcomeAudioBuffer();
 
@@ -143,7 +137,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
       for (const member of newMembers) {
         const mentionTag = `@${member.split("@")[0]}`;
         const welcomeText = [
-          `Oi ${mentionTag}, tudo bem? 🪇`,
+          `Oi ${mentionTag}, tudo bem? 🪇🪇🪇`,
           "Seja bem vindo (a)!",
           "Se quiser se apresentar, temos um formulário de sugestão",
           "",
@@ -168,10 +162,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
           mentions: [member],
         });
 
-        logger.info(
-          { groupId: update.id, participant: member.split("@")[0] },
-          "Mensagem de boas-vindas enviada.",
-        );
+        logger.info({ groupId: update.id, participant: member.split("@")[0] }, "Mensagem de boas-vindas enviada.");
 
         if (audioBuffer) {
           await sock.sendMessage(update.id, {
@@ -179,10 +170,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
             mimetype: "audio/mpeg",
           });
 
-          logger.info(
-            { groupId: update.id, participant: member.split("@")[0] },
-            "Áudio de boas-vindas enviado.",
-          );
+          logger.info({ groupId: update.id, participant: member.split("@")[0] }, "Áudio de boas-vindas enviado.");
         }
       }
     } catch (err) {
