@@ -145,6 +145,26 @@ async function main() {
         sock.ev.on("messages.upsert", async ({ messages }) => {
           for (const m of messages) {
             const remote = m.key.remoteJid || "";
+
+            if (remote && remote !== "status@broadcast" && !m.key.fromMe) {
+              const textContent =
+                m.message?.conversation ||
+                m.message?.extendedTextMessage?.text ||
+                m.message?.imageMessage?.caption ||
+                m.message?.videoMessage?.caption ||
+                "";
+
+              if (textContent.toLowerCase().includes("chocalho")) {
+                try {
+                  await sock.sendMessage(remote, {
+                    react: { text: "🪇", key: m.key },
+                  });
+                } catch (err) {
+                  logger.warn({ err }, "Failed to send chocalho reaction");
+                }
+              }
+            }
+
             const isGroup = remote.endsWith("@g.us") || remote.endsWith("@newsletter");
 
             if (moderationMode) {
