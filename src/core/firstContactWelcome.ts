@@ -155,7 +155,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
 
         const mentionTag = `@${member.split("@")[0]}`;
         const welcomeText = [
-          `Olá ${mentionTag}, você é um novo mensan! em breve um humano veterano te recepcionará. se você já é veterano, aproveita pra se apresentar de novo!`,
+          `Olá ${mentionTag}, você é um novo mensan? em breve um humano veterano te recepcionará. se você já é veterano, aproveita pra se apresentar de novo!`,
           "",
           "ah, segue um formulário de sugestão caso queira se apresentar.",
           "",
