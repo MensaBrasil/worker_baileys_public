@@ -25,6 +25,7 @@ client.on("error", (err: Error) => {
 });
 
 let isConnected = false;
+const FIRST_CONTACT_LOCK_PREFIX = "first-contact-welcome";
 
 /**
  * Establishes a connection to the Redis client if not already connected.
@@ -43,6 +44,30 @@ export async function disconnect(): Promise<void> {
   if (isConnected) {
     await client.quit();
     isConnected = false;
+  }
+}
+
+/**
+ * Attempts to acquire a first-contact welcome lock for a given group + participant combination.
+ * Returns true if the lock was acquired, false if it already exists, and null if Redis is unavailable.
+ */
+export async function tryAcquireFirstContactLock(
+  groupJid: string,
+  participantJid: string,
+  ttlMs: number,
+): Promise<boolean | null> {
+  try {
+    await connect();
+    const key = `${FIRST_CONTACT_LOCK_PREFIX}:${groupJid}:${participantJid}`;
+    const result = await client.set(key, "1", {
+      NX: true,
+      PX: ttlMs,
+    });
+
+    return result === "OK";
+  } catch (error) {
+    console.error("Falha ao adquirir lock de primeiro contato", error);
+    return null;
   }
 }
 

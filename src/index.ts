@@ -19,6 +19,7 @@ import { testRedisConnection } from "./db/redis";
 import { delaySecs } from "./utils/delay";
 import { addNewAuthorizations, checkAuth } from "./core/authTask";
 import { handleMessageModeration } from "./core/moderationTask";
+import { registerFirstContactWelcome } from "./core/firstContactWelcome";
 
 configDotenv({ path: ".env" });
 
@@ -77,6 +78,8 @@ async function main() {
 
       const workerPhone = sock.user?.id?.split(":")[0]?.replace(/\D/g, "");
       if (!workerPhone) throw new Error("Unable to determine worker phone from Baileys instance.");
+
+      registerFirstContactWelcome(sock);
 
       const workers = await getAllWhatsAppWorkers();
       const found = workers.find((w) => w.worker_phone.replace(/\D/g, "") === workerPhone);
@@ -142,6 +145,26 @@ async function main() {
         sock.ev.on("messages.upsert", async ({ messages }) => {
           for (const m of messages) {
             const remote = m.key.remoteJid || "";
+
+            if (remote && remote !== "status@broadcast" && !m.key.fromMe) {
+              const textContent =
+                m.message?.conversation ||
+                m.message?.extendedTextMessage?.text ||
+                m.message?.imageMessage?.caption ||
+                m.message?.videoMessage?.caption ||
+                "";
+
+              if (textContent.toLowerCase().includes("chocalho")) {
+                try {
+                  await sock.sendMessage(remote, {
+                    react: { text: "🪇", key: m.key },
+                  });
+                } catch (err) {
+                  logger.warn({ err }, "Failed to send chocalho reaction");
+                }
+              }
+            }
+
             const isGroup = remote.endsWith("@g.us") || remote.endsWith("@newsletter");
 
             if (moderationMode) {
