@@ -36,6 +36,13 @@ function normalizeMockedUrlText(text: string): string {
     .replace(/\bslash\b/gi, "/")
     .replace(/\bponto\b/gi, ".")
     .replace(/([a-z0-9])ponto([a-z0-9])/gi, "$1.$2")
+    .replace(/\bh\s*t\s*t\s*p\s*s?\s*:\s*\/\s*\/\s*/gi, (match) => {
+      const cleaned = match.replace(/\s+/g, "");
+      return cleaned.toLowerCase().startsWith("https") ? "https://" : "http://";
+    })
+    .replace(/c\s*h\s*a\s*t\s*\.?\s*w\s*h\s*a\s*t\s*s\s*a\s*p\s*p\s*\.?\s*c\s*o\s*m/gi, "chat.whatsapp.com")
+    .replace(/a\s*p\s*i\s*\.?\s*w\s*h\s*a\s*t\s*s\s*a\s*p\s*p\s*\.?\s*c\s*o\s*m/gi, "api.whatsapp.com")
+    .replace(/w\s*a\s*\.?\s*m\s*e/gi, "wa.me")
     .replace(/(?:\u200b|\u200c|\u200d|\ufeff)/g, "")
     .replace(/:\s*\/\s*\//g, "://")
     .replace(/\/\s*\/+/g, "//")
@@ -190,11 +197,16 @@ export async function handleMessageModeration(
   const hasCommunityLink = containsCommunityUrl(normalizedText);
   const hasBannedCommunityId = normalizedText.includes(bannedCommunityId);
 
+  const hasGroupInviteLink = groupInviteRegex.test(text) || groupInviteRegex.test(normalizedText);
+  const hasShortenedLink = shortenerRegex.test(text) || shortenerRegex.test(normalizedText);
+  const hasApiWhatsAppLink = apiWhatsAppRegex.test(text) || apiWhatsAppRegex.test(normalizedText);
+  const hasWaMeLink = waMeRegex.test(text) || waMeRegex.test(normalizedText);
+
   const hasModeratableLink =
-    groupInviteRegex.test(text) ||
-    shortenerRegex.test(text) ||
-    apiWhatsAppRegex.test(text) ||
-    waMeRegex.test(text) ||
+    hasGroupInviteLink ||
+    hasShortenedLink ||
+    hasApiWhatsAppLink ||
+    hasWaMeLink ||
     hasCommunityLink ||
     hasBannedCommunityId;
 
@@ -208,13 +220,13 @@ export async function handleMessageModeration(
       const senderJid = msg.key.participant || msg.key.remoteJid || "";
       const phone = (senderJid.split("@")[0] || "").replace(/\D/g, "");
       let deletionReason: string;
-      if (groupInviteRegex.test(text)) {
+      if (hasGroupInviteLink) {
         deletionReason = "group_invite_link";
-      } else if (shortenerRegex.test(text)) {
+      } else if (hasShortenedLink) {
         deletionReason = "shortened_link";
-      } else if (apiWhatsAppRegex.test(text)) {
+      } else if (hasApiWhatsAppLink) {
         deletionReason = "api_whatsapp_link";
-      } else if (waMeRegex.test(text)) {
+      } else if (hasWaMeLink) {
         deletionReason = "wa_me_link";
       } else if (hasBannedCommunityId) {
         deletionReason = "community_id";
