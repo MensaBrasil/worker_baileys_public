@@ -22,6 +22,7 @@ const waMeRegex = /(?:https?:\/\/)?(?:www\.)?wa(?:\.|\[\.\])me(?:\/\S*)?/i;
 const xCommunityRegex = /(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/i\/communities\/[^\s]+/i;
 const communityKeywordRegex = /(commun\w*|group\w*)/i;
 const urlLikeRegex = /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9][\w-]*\.)+[a-z0-9-]{2,}(?:\/[^\s]*)?/gi;
+const whitelistedCommunityDomains = ["mensa.org", "mensa.org.br"];
 const bannedCommunityId = "1968352772362780861";
 
 function normalizeMockedUrlText(text: string): string {
@@ -71,6 +72,29 @@ function stripUrlPunctuation(candidate: string): string {
   return value;
 }
 
+function getHostname(candidate: string): string | null {
+  let value = stripUrlPunctuation(candidate.trim());
+  if (!value) return null;
+
+  if (!/^https?:\/\//i.test(value)) {
+    value = value.startsWith("www.") ? `https://${value}` : `https://${value}`;
+  }
+
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname;
+    if (!hostname || !hostname.includes(".")) return null;
+    return hostname;
+  } catch {
+    return null;
+  }
+}
+
+function isWhitelistedHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return whitelistedCommunityDomains.some((domain) => host === domain || host.endsWith(`.${domain}`));
+}
+
 function isDomainLike(candidate: string): boolean {
   let value = stripUrlPunctuation(candidate.trim());
   if (!value) return false;
@@ -106,6 +130,9 @@ function containsCommunityUrl(text: string): boolean {
     const candidate = stripUrlPunctuation(rawCandidate);
     if (!candidate) return false;
     if (!communityKeywordRegex.test(candidate)) return false;
+
+    const hostname = getHostname(candidate);
+    if (hostname && isWhitelistedHostname(hostname)) return false;
 
     if (isDomainLike(candidate)) return true;
 
