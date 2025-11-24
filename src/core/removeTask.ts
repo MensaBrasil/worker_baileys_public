@@ -137,6 +137,7 @@ export async function removeMemberFromGroup(
   communityId?: string,
 ): Promise<RemovalAttemptResult> {
   const userJid = phoneToUserJid(phone);
+  let communityAttempt: RemovalAttemptResult | null = null;
 
   try {
     if (communityId) {
@@ -145,17 +146,27 @@ export async function removeMemberFromGroup(
       if (!community) {
         const msg = `Comunidade ${communityId} não encontrada.`;
         console.log(ansi.yellow(`${msg} Pulando remoção na comunidade.`));
-        return { removed: false, removalType: null, groupName: null, errorReason: msg };
+        communityAttempt = { removed: false, removalType: null, groupName: null, errorReason: msg };
       } else {
         const participant = findParticipant(community, userJid);
         if (!participant) {
           const msg = `Participante ${phone} não encontrado na comunidade ${community.subject ?? communityJid} (${communityId}).`;
           console.log(ansi.yellow(msg));
-          return { removed: false, removalType: null, groupName: community.subject ?? communityJid, errorReason: msg };
+          communityAttempt = {
+            removed: false,
+            removalType: null,
+            groupName: community.subject ?? communityJid,
+            errorReason: msg,
+          };
         } else if (participant.admin) {
           const msg = `Participante ${phone} é admin na comunidade; não é possível remover.`;
           console.log(ansi.yellow(`${msg} (${community.subject ?? communityJid}).`));
-          return { removed: false, removalType: null, groupName: community.subject ?? communityJid, errorReason: msg };
+          communityAttempt = {
+            removed: false,
+            removalType: null,
+            groupName: community.subject ?? communityJid,
+            errorReason: msg,
+          };
         } else {
           console.log(
             ansi.white(`Tentando remover ${phone} da comunidade ${community.subject ?? communityJid} (${communityId})`),
@@ -169,7 +180,7 @@ export async function removeMemberFromGroup(
               errorReason: null,
             };
           } else {
-            return {
+            communityAttempt = {
               removed: false,
               removalType: null,
               groupName: community.subject ?? communityJid,
@@ -185,7 +196,12 @@ export async function removeMemberFromGroup(
     if (!group) {
       const msg = `Grupo ${groupId} não encontrado.`;
       console.log(ansi.red(msg));
-      return { removed: false, removalType: null, groupName: null, errorReason: msg };
+      return {
+        removed: false,
+        removalType: null,
+        groupName: communityAttempt?.groupName ?? null,
+        errorReason: communityAttempt?.errorReason ?? msg,
+      };
     }
 
     const participant = findParticipant(group, userJid);
@@ -211,7 +227,7 @@ export async function removeMemberFromGroup(
       removed: false,
       removalType: null,
       groupName: group.subject ?? groupJid,
-      errorReason: "Falha na operação de remoção no grupo (participantsUpdate).",
+      errorReason: communityAttempt?.errorReason ?? "Falha na operação de remoção no grupo (participantsUpdate).",
     };
   } catch (error) {
     const errMsg = (error as Error)?.stack || String(error);
