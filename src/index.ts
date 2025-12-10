@@ -217,7 +217,16 @@ async function main() {
             if (authMode && !isGroup) {
               const normalizeDigits = (input: string | null | undefined) => (input || "").replace(/\D/g, "");
               const pickContactNumber = () => {
-                const candidates = [m.key.senderPn, m.key.participantPn, m.key.participant, remoteJid];
+                const keyAny = m.key as Record<string, unknown>;
+                const toStr = (val: unknown) => (typeof val === "string" ? val : null);
+                const candidates = [
+                  toStr(keyAny.senderPn),
+                  toStr(keyAny.participantPn),
+                  toStr(keyAny.participantAlt),
+                  toStr(keyAny.remoteJidAlt),
+                  toStr(keyAny.participant),
+                  remoteJid,
+                ];
                 const digits = candidates.map(normalizeDigits).filter(Boolean);
                 const preferred = digits.find((d) => d.length >= 8 && d.length <= 15);
                 return preferred || digits[0] || "";
