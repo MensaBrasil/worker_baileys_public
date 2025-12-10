@@ -144,6 +144,7 @@ async function main() {
 
       (async function mainLoop() {
         const startTime = Date.now();
+        let lastRuntimeLog = 0;
         while (shouldRun) {
           try {
             if (addMode) {
@@ -169,7 +170,11 @@ async function main() {
 
             const currentTime = Date.now();
             const elapsed = currentTime - startTime;
-            logger.info(`Process has been running for ${Math.floor(elapsed / 60_000)} minutes`);
+            const minutes = Math.floor(elapsed / 60_000);
+            if (minutes >= lastRuntimeLog + 5 || lastRuntimeLog === 0) {
+              logger.info(`Process has been running for ${minutes} minutes`);
+              lastRuntimeLog = minutes;
+            }
           } catch (err) {
             logger.error({ err }, "[mainLoop] error");
           }
