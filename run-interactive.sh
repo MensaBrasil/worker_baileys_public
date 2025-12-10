@@ -14,24 +14,40 @@ echo " 8) Custom (digite as flags; --auth será adicionado automaticamente)"
 printf "Opção: "
 read -r choice
 
-FLAGS=()
+MODE_FLAGS=()
 
 case "$choice" in
-  1|"") FLAGS=() ;; # vazio ativa todos (default)
-  2) FLAGS=(--add --auth) ;;
-  3) FLAGS=(--remove --auth) ;;
-  4) FLAGS=(--moderation --auth) ;;
-  5) FLAGS=(--add --remove --auth) ;;
-  6) FLAGS=(--add --moderation --auth) ;;
-  7) FLAGS=(--remove --moderation --auth) ;;
+  1|"") MODE_FLAGS=() ;; # vazio ativa todos (default)
+  2) MODE_FLAGS=(--add --auth) ;;
+  3) MODE_FLAGS=(--remove --auth) ;;
+  4) MODE_FLAGS=(--moderation --auth) ;;
+  5) MODE_FLAGS=(--add --remove --auth) ;;
+  6) MODE_FLAGS=(--add --moderation --auth) ;;
+  7) MODE_FLAGS=(--remove --moderation --auth) ;;
   8)
     echo "Digite as flags (ex: --add --remove): "
     read -r custom_flags
     # shellcheck disable=SC2206
-    FLAGS=($custom_flags --auth)
+    MODE_FLAGS=($custom_flags --auth)
     ;;
   *) echo "Opção inválida."; exit 1 ;;
 esac
+
+echo
+echo "Selecione o método de autenticação:"
+echo " 1) QR code (default)"
+echo " 2) Pairing code (--pairing, requer PAIRING_PHONE na .env)"
+printf "Opção: "
+read -r auth_choice
+
+AUTH_FLAGS=()
+case "$auth_choice" in
+  1|"") AUTH_FLAGS=() ;;
+  2) AUTH_FLAGS=(--pairing) ;;
+  *) echo "Opção inválida."; exit 1 ;;
+esac
+
+FLAGS=("${MODE_FLAGS[@]}" "${AUTH_FLAGS[@]}")
 
 echo "Iniciando loop com: pnpm start ${FLAGS[*]}"
 
