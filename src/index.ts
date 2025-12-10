@@ -7,7 +7,7 @@ import { BoomError } from "./types/errorTypes";
 import { processAddQueue } from "./core/addTask";
 import { processRemoveQueue } from "./core/removeTask";
 import type { Worker } from "./types/addTaskTypes";
-import { getAllWhatsAppWorkers, upsertLidMapping } from "./db/pgsql";
+import { getAllWhatsAppWorkers } from "./db/pgsql";
 import { testRedisConnection } from "./db/redis";
 import { delaySecs } from "./utils/delay";
 import { addNewAuthorizations, checkAuth } from "./core/authTask";
@@ -144,7 +144,8 @@ async function main() {
 
       (async function mainLoop() {
         const startTime = Date.now();
-        let lastRuntimeLog = 0;
+        let lastRuntimeLogMinutes = -5;
+        let runtimeLoggedOnce = false;
         while (shouldRun) {
           try {
             if (addMode) {
@@ -171,9 +172,10 @@ async function main() {
             const currentTime = Date.now();
             const elapsed = currentTime - startTime;
             const minutes = Math.floor(elapsed / 60_000);
-            if (minutes >= lastRuntimeLog + 5 || lastRuntimeLog === 0) {
+            if (!runtimeLoggedOnce || minutes - lastRuntimeLogMinutes >= 5) {
               logger.info(`Process has been running for ${minutes} minutes`);
-              lastRuntimeLog = minutes;
+              lastRuntimeLogMinutes = minutes;
+              runtimeLoggedOnce = true;
             }
           } catch (err) {
             logger.error({ err }, "[mainLoop] error");
@@ -213,7 +215,15 @@ async function main() {
             }
 
             if (authMode && !isGroup) {
-              const contactNumber = (remoteJid.endsWith("@s.whatsapp.net") ? remoteJid.split("@")[0] : remoteJid) || "";
+              const normalizeDigits = (input: string | null | undefined) => (input || "").replace(/\D/g, "");
+              const pickContactNumber = () => {
+                const candidates = [m.key.senderPn, m.key.participantPn, m.key.participant, remoteJid];
+                const digits = candidates.map(normalizeDigits).filter(Boolean);
+                const preferred = digits.find((d) => d.length >= 8 && d.length <= 15);
+                return preferred || digits[0] || "";
+              };
+
+              const contactNumber = pickContactNumber();
               try {
                 await checkAuth(contactNumber, worker.phone);
               } catch (e) {
@@ -243,29 +253,6 @@ async function main() {
       mainLoopStarted = false;
       shouldRun = false;
       resolveRestart?.();
-    }
-  });
-
-  sock.ev.on("lid-mapping.update", async (updates) => {
-    const list = Array.isArray(updates) ? updates : [updates];
-    for (const item of list) {
-      const lid = (item as { lid?: string; id?: string }).lid ?? (item as { id?: string }).id;
-      const phone =
-        (item as { pn?: string; phoneNumber?: string }).pn ?? (item as { phoneNumber?: string }).phoneNumber;
-      if (lid && phone) {
-        try {
-          if (sock.signalRepository?.lidMapping) {
-            await sock.signalRepository.lidMapping.storeLIDPNMappings([{ lid, pn: phone }]);
-          }
-        } catch (err) {
-          logger.debug({ err, lid }, "Failed to store LID mapping in memory store");
-        }
-        try {
-          await upsertLidMapping(lid, phone, "lid-mapping.update");
-        } catch (err) {
-          logger.warn({ err, lid }, "Failed to persist LID mapping to DB (whatsapp_lid_mappings)");
-        }
-      }
     }
   });
 

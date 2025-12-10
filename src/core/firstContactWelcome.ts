@@ -264,11 +264,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
           continue;
         }
 
-        const participantJidRaw =
-          message.key.participantAlt ??
-          message.key.participant ??
-          message.participant ??
-          (message.key.participant as string | null | undefined);
+        const participantJidRaw = message.key.participant ?? message.participant ?? null;
         if (!participantJidRaw) {
           continue;
         }
