@@ -148,7 +148,7 @@ export async function removeMemberFromGroup(
         console.log(ansi.yellow(`${msg} Pulando remoção na comunidade.`));
         communityAttempt = { removed: false, removalType: null, groupName: null, errorReason: msg };
       } else {
-        const participant = findParticipant(community, userJid);
+        const participant = findParticipant(community, userJid, { altId: phone });
         if (!participant) {
           const msg = `Participante ${phone} não encontrado na comunidade ${community.subject ?? communityJid} (${communityId}).`;
           console.log(ansi.yellow(msg));
@@ -204,7 +204,7 @@ export async function removeMemberFromGroup(
       };
     }
 
-    const participant = findParticipant(group, userJid);
+    const participant = findParticipant(group, userJid, { altId: phone });
     if (!participant) {
       const msg = `Participante ${phone} não encontrado no grupo ${group.subject ?? groupJid}.`;
       console.log(ansi.red(msg));

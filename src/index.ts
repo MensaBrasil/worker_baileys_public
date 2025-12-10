@@ -6,6 +6,7 @@ import {
   fetchLatestBaileysVersion,
   Browsers,
   type ConnectionState,
+  type WAMessageKey,
 } from "baileys";
 import qrcode from "qrcode-terminal";
 import logger from "./utils/logger";
@@ -14,7 +15,7 @@ import { BoomError } from "./types/errorTypes";
 import { processAddQueue } from "./core/addTask";
 import { processRemoveQueue } from "./core/removeTask";
 import type { Worker } from "./types/addTaskTypes";
-import { getAllWhatsAppWorkers } from "./db/pgsql";
+import { getAllWhatsAppWorkers, upsertLidMapping } from "./db/pgsql";
 import { testRedisConnection } from "./db/redis";
 import { delaySecs } from "./utils/delay";
 import { addNewAuthorizations, checkAuth } from "./core/authTask";
@@ -76,7 +77,9 @@ async function main() {
     if (connection === "open") {
       logger.info("[wa] connection opened.");
 
-      const workerPhone = sock.user?.id?.split(":")[0]?.replace(/\D/g, "");
+      const workerPhone =
+        (sock.user as { phoneNumber?: string } | undefined)?.phoneNumber?.replace(/\D/g, "") ||
+        sock.user?.id?.split(":")[0]?.split("@")[0]?.replace(/\D/g, "");
       if (!workerPhone) throw new Error("Unable to determine worker phone from Baileys instance.");
 
       registerFirstContactWelcome(sock);
@@ -143,10 +146,46 @@ async function main() {
       // Event-driven moderation/auth flows
       if (moderationMode || authMode) {
         sock.ev.on("messages.upsert", async ({ messages }) => {
-          for (const m of messages) {
-            const remote = m.key.remoteJid || "";
+          const normalizeDigits = (input: string | null | undefined) => (input || "").replace(/\D/g, "") || null;
 
-            if (remote && remote !== "status@broadcast" && !m.key.fromMe) {
+          const resolveIdentityFromKey = async (
+            key: WAMessageKey,
+          ): Promise<{ phone: string | null; lid: string | null }> => {
+            const alt = key.remoteJidAlt ?? key.participantAlt ?? null;
+            const fromAlt = normalizeDigits(alt);
+            if (fromAlt) return { phone: fromAlt, lid: null };
+
+            const jid = key.remoteJid ?? null;
+            const direct = normalizeDigits(jid?.endsWith("@s.whatsapp.net") ? jid.split("@")[0] : jid);
+            if (direct) return { phone: direct, lid: null };
+
+            const lidJid =
+              (jid && jid.endsWith("@lid")) || (key.participant && key.participant.endsWith("@lid"))
+                ? jid && jid.endsWith("@lid")
+                  ? jid
+                  : (key.participant ?? null)
+                : null;
+
+            let phoneFromLid: string | null = null;
+            if (lidJid && sock.signalRepository?.lidMapping) {
+              try {
+                const pn = await sock.signalRepository.lidMapping.getPNForLID(lidJid);
+                phoneFromLid = normalizeDigits(pn);
+              } catch (err) {
+                logger.debug({ err, lid: lidJid }, "Failed to resolve LID via signalRepository");
+              }
+            }
+
+            const lidDigits = normalizeDigits(lidJid?.split("@")[0] ?? null);
+            return { phone: phoneFromLid, lid: lidDigits };
+          };
+
+          for (const m of messages) {
+            const remoteJid = m.key.remoteJid || "";
+            const remoteAlt = m.key.remoteJidAlt || "";
+            const chatJid = remoteJid || remoteAlt;
+
+            if (chatJid && chatJid !== "status@broadcast" && !m.key.fromMe) {
               const textContent =
                 m.message?.conversation ||
                 m.message?.extendedTextMessage?.text ||
@@ -156,7 +195,7 @@ async function main() {
 
               if (textContent.toLowerCase().includes("chocalho")) {
                 try {
-                  await sock.sendMessage(remote, {
+                  await sock.sendMessage(remoteJid || remoteAlt, {
                     react: { text: "🪇", key: m.key },
                   });
                 } catch (err) {
@@ -165,14 +204,15 @@ async function main() {
               }
             }
 
-            const isGroup = remote.endsWith("@g.us") || remote.endsWith("@newsletter");
+            const isGroup = chatJid.endsWith("@g.us") || chatJid.endsWith("@newsletter");
 
             if (moderationMode) {
               await handleMessageModeration(sock, m);
             }
 
             if (authMode && !isGroup) {
-              const contactNumber = (remote.endsWith("@s.whatsapp.net") ? remote.split("@")[0] : remote) || "";
+              const identity = await resolveIdentityFromKey(m.key);
+              const contactNumber = identity.phone ?? identity.lid ?? "";
               try {
                 await checkAuth(contactNumber, worker.phone);
               } catch (e) {
@@ -234,6 +274,29 @@ async function main() {
         const reason = msg === "logged_out" ? "Session logged out during retry" : "Reconnect timeout";
         logger.fatal({ code, reason }, "[wa] reconnect failed; exiting.");
         process.exit(1);
+      }
+    }
+  });
+
+  sock.ev.on("lid-mapping.update", async (updates) => {
+    const list = Array.isArray(updates) ? updates : [updates];
+    for (const item of list) {
+      const lid = (item as { lid?: string; id?: string }).lid ?? (item as { id?: string }).id;
+      const phone =
+        (item as { pn?: string; phoneNumber?: string }).pn ?? (item as { phoneNumber?: string }).phoneNumber;
+      if (lid && phone) {
+        try {
+          if (sock.signalRepository?.lidMapping) {
+            await sock.signalRepository.lidMapping.storeLIDPNMappings([{ lid, pn: phone }]);
+          }
+        } catch (err) {
+          logger.debug({ err, lid }, "Failed to store LID mapping in memory store");
+        }
+        try {
+          await upsertLidMapping(lid, phone, "lid-mapping.update");
+        } catch (err) {
+          logger.warn({ err, lid }, "Failed to persist LID mapping to DB (whatsapp_lid_mappings)");
+        }
       }
     }
   });

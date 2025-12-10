@@ -1,4 +1,4 @@
-import type { BaileysEventMap, ParticipantAction, WASocket } from "baileys";
+import type { BaileysEventMap, GroupParticipant, ParticipantAction, WASocket } from "baileys";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -18,6 +18,26 @@ type PendingAudioRequest = {
 };
 
 const pendingAudioRequests = new Map<string, Map<string, PendingAudioRequest>>();
+
+function normalizeParticipantId(participant: GroupParticipant | string | undefined | null): string | null {
+  if (!participant) return null;
+  if (typeof participant === "string") return participant;
+  const id = (participant as { id?: unknown }).id;
+  if (typeof id === "string") return id;
+  const jid = (participant as { jid?: unknown }).jid;
+  if (typeof jid === "string") return jid;
+  const lid = (participant as { lid?: unknown }).lid;
+  if (typeof lid === "string") return lid;
+  const user = (participant as { user?: unknown }).user;
+  if (typeof user === "string") return user;
+  return null;
+}
+
+function participantTag(participantId: string | null): string {
+  if (!participantId) return "";
+  const base = participantId.split("@")[0] ?? participantId;
+  return base;
+}
 
 async function getWelcomeAudioBuffer(): Promise<Buffer | null> {
   if (cachedWelcomeAudio) {
@@ -115,7 +135,10 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         return;
       }
 
-      const participantNumbers = update.participants.map((jid) => jid.split("@")[0]);
+      const participantIds = update.participants
+        .map((p) => normalizeParticipantId(p))
+        .filter((id): id is string => Boolean(id));
+      const participantNumbers = participantIds.map((jid) => participantTag(jid));
       logger.info(
         {
           groupId: update.id,
@@ -131,7 +154,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         return;
       }
 
-      const newMembers = update.participants.filter((jid) => jid !== botJid);
+      const newMembers = participantIds.filter((jid) => jid !== botJid);
       if (!newMembers.length) {
         return;
       }
@@ -140,7 +163,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         const lockResult = await tryAcquireFirstContactLock(update.id, member, WELCOME_DEDUP_TTL_MS);
         if (lockResult === false) {
           logger.info(
-            { groupId: update.id, participant: member.split("@")[0] },
+            { groupId: update.id, participant: participantTag(member) },
             "Mensagem de boas-vindas ignorada: outro worker já enviou recentemente.",
           );
           continue;
@@ -148,12 +171,12 @@ export function registerFirstContactWelcome(sock: WASocket): void {
 
         if (lockResult === null) {
           logger.warn(
-            { groupId: update.id, participant: member.split("@")[0] },
+            { groupId: update.id, participant: participantTag(member) },
             "Não foi possível verificar lock de primeiro contato; prosseguindo mesmo assim.",
           );
         }
 
-        const mentionTag = `@${member.split("@")[0]}`;
+        const mentionTag = `@${participantTag(member)}`;
         const welcomeText = [
           `Olá ${mentionTag}, você é um novo mensan? em breve um humano veterano te recepcionará. se você já é veterano, aproveita pra se apresentar de novo!`,
           "",
@@ -188,7 +211,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
           text: formText,
         });
 
-        logger.info({ groupId: update.id, participant: member.split("@")[0] }, "Mensagem de boas-vindas enviada.");
+        logger.info({ groupId: update.id, participant: participantTag(member) }, "Mensagem de boas-vindas enviada.");
 
         const groupRequests = pendingAudioRequests.get(update.id) ?? new Map<string, PendingAudioRequest>();
         const existingRequest = groupRequests.get(member);
@@ -215,7 +238,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         pendingAudioRequests.set(update.id, groupRequests);
 
         logger.info(
-          { groupId: update.id, participant: member.split("@")[0], expiresInMs: AUDIO_REQUEST_WINDOW_MS },
+          { groupId: update.id, participant: participantTag(member), expiresInMs: AUDIO_REQUEST_WINDOW_MS },
           "Janela para áudio de boas-vindas iniciada.",
         );
       }
@@ -241,11 +264,16 @@ export function registerFirstContactWelcome(sock: WASocket): void {
           continue;
         }
 
-        const participantJid = message.key.participant ?? message.participant;
-        if (!participantJid) {
+        const participantJidRaw =
+          message.key.participantAlt ??
+          message.key.participant ??
+          message.participant ??
+          (message.key.participant as string | null | undefined);
+        if (!participantJidRaw) {
           continue;
         }
 
+        const participantJid = String(participantJidRaw);
         const request = requestsForGroup.get(participantJid);
         if (!request) {
           continue;
@@ -275,7 +303,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         const audioBuffer = await getWelcomeAudioBuffer();
         if (!audioBuffer) {
           logger.warn(
-            { groupId: remoteJid, participant: participantJid.split("@")[0] },
+            { groupId: remoteJid, participant: participantTag(participantJid) },
             "Áudio de boas-vindas indisponível ao responder solicitação.",
           );
         } else {
@@ -285,7 +313,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
           });
 
           logger.info(
-            { groupId: remoteJid, participant: participantJid.split("@")[0] },
+            { groupId: remoteJid, participant: participantTag(participantJid) },
             "Áudio de boas-vindas enviado mediante solicitação.",
           );
         }

@@ -6,7 +6,7 @@ function normalizeDigits(input: string): string {
   return String(input || "").replace(/\D/g, "");
 }
 
-function jidToPhone(remoteJid: string | undefined): string | null {
+function jidToPhone(remoteJid: string | undefined | null): string | null {
   if (!remoteJid) return null;
   // Expect something like "5511999998888@s.whatsapp.net"
   const idx = remoteJid.indexOf("@");
@@ -14,6 +14,16 @@ function jidToPhone(remoteJid: string | undefined): string | null {
   const local = remoteJid.slice(0, idx);
   const digits = normalizeDigits(local);
   return digits.length ? digits : null;
+}
+
+function contactToPhone(
+  contact: { id?: string | null; phoneNumber?: string | null } | string | undefined | null,
+): string | null {
+  if (!contact) return null;
+  if (typeof contact === "string") return jidToPhone(contact);
+  const fromPhoneNumber = normalizeDigits(String(contact.phoneNumber || ""));
+  if (fromPhoneNumber) return fromPhoneNumber;
+  return jidToPhone(contact.id ?? null);
 }
 
 /**
@@ -87,9 +97,9 @@ export async function addNewAuthorizations(sock: WASocket, workerPhone: string):
     // If none arrive, we proceed with zero updates.
     const collectedPhones = new Set<string>();
 
-    // Helper to record a phone from a JID
-    const recordJid = (jid?: string | null) => {
-      const p = jidToPhone(jid || undefined);
+    // Helper to record a phone from a contact/chat entry
+    const recordContact = (entry: { id?: string | null; phoneNumber?: string | null } | string | null | undefined) => {
+      const p = contactToPhone(entry);
       if (p) collectedPhones.add(p);
     };
 
@@ -100,11 +110,10 @@ export async function addNewAuthorizations(sock: WASocket, workerPhone: string):
       // Collect from initial messaging history set (includes chats & contacts)
       const onHistorySet: (arg: BaileysEventMap["messaging-history.set"]) => void = ({ chats, contacts }) => {
         for (const c of chats) {
-          const jid = c.id;
-          const isGroup = jid?.endsWith("@g.us");
-          if (!isGroup) recordJid(jid);
+          const isGroup = c.id?.endsWith("@g.us");
+          if (!isGroup) recordContact(c);
         }
-        for (const ct of contacts) recordJid(ct.id);
+        for (const ct of contacts) recordContact(ct);
         // give a small buffer for possible subsequent upserts
         timers.push(setTimeout(cleanupAndResolve, 200));
       };
@@ -112,15 +121,14 @@ export async function addNewAuthorizations(sock: WASocket, workerPhone: string):
       // Collect from chat upserts (just in case)
       const onChatsUpsert: (arg: BaileysEventMap["chats.upsert"]) => void = (chats) => {
         for (const c of chats) {
-          const jid = c.id;
-          const isGroup = jid?.endsWith("@g.us");
-          if (!isGroup) recordJid(jid);
+          const isGroup = c.id?.endsWith("@g.us");
+          if (!isGroup) recordContact(c);
         }
       };
 
       // Collect from contacts upsert as a fallback (non-groups)
       const onContactsUpsert: (arg: BaileysEventMap["contacts.upsert"]) => void = (contacts) => {
-        for (const ct of contacts) recordJid(ct.id);
+        for (const ct of contacts) recordContact(ct);
       };
 
       const cleanupAndResolve = () => {

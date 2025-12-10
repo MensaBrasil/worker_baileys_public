@@ -318,8 +318,9 @@ async function safeGroupMetadata(sock: WASocket, groupJid: string): Promise<Grou
 function checkIfSelfIsAdmin(sock: WASocket, meta: GroupMetadata): boolean {
   // Match the bot user against participants by numeric identity (jid/lid safe)
   const selfId = sock.user?.id;
-  if (!selfId) return false;
-  return isParticipantAdmin(meta, selfId);
+  const selfAlt = (sock.user as { phoneNumber?: string } | undefined)?.phoneNumber ?? null;
+  if (!selfId && !selfAlt) return false;
+  return isParticipantAdmin(meta, selfId ?? null, { altId: selfAlt });
 }
 
 async function safeRecordEntry(

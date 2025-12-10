@@ -1,5 +1,5 @@
 import { config as configDotenv } from "dotenv";
-import type { BaileysEventMap, GroupMetadata, proto, WASocket } from "baileys";
+import type { BaileysEventMap, GroupMetadata, proto, WASocket, WAMessageKey } from "baileys";
 import { sendTelegramFlaggedLog } from "../utils/telegram";
 import { findParticipant } from "../utils/waParticipants";
 import logger from "../utils/logger";
@@ -166,17 +166,23 @@ async function deleteMessageIfAllowed(
   meta: GroupMetadata | null,
 ): Promise<{ attempted: boolean; deleted: boolean } | void> {
   try {
-    if (!msg.key?.remoteJid) return;
-    const fromJid = msg.key.remoteJid;
-    const senderJid = msg.key.participant || msg.key.remoteJid;
-    const isGroup = fromJid.endsWith("@g.us");
+    const key = (msg.key ?? undefined) as
+      | (proto.IMessageKey & {
+          remoteJidAlt?: string;
+          participantAlt?: string;
+        })
+      | null;
+    const fromJid = key?.remoteJid ?? key?.remoteJidAlt;
+    if (!fromJid) return;
+    const senderJid = key?.participantAlt ?? key?.participant ?? key?.remoteJidAlt ?? key?.remoteJid ?? fromJid;
+    const isGroup = fromJid.endsWith("@g.us") || fromJid.endsWith("@newsletter");
     if (!isGroup || !meta) return { attempted: false, deleted: false };
 
-    const p = findParticipant(meta, senderJid);
+    const p = findParticipant(meta, senderJid, { altId: key?.participantAlt ?? key?.remoteJidAlt ?? null });
     const isSenderAdmin = Boolean(p?.admin);
     if (isSenderAdmin) return { attempted: false, deleted: false }; // Don't delete admin messages
 
-    await sock.sendMessage(fromJid, { delete: msg.key });
+    await sock.sendMessage(fromJid, { delete: (key as WAMessageKey) ?? undefined });
     return { attempted: true, deleted: true };
   } catch {
     return { attempted: true, deleted: false };
@@ -211,7 +217,13 @@ export async function handleMessageModeration(
   sock: WASocket,
   msg: BaileysEventMap["messages.upsert"]["messages"][number],
 ): Promise<void> {
-  const remote = msg.key.remoteJid || "";
+  const key = (msg.key ?? undefined) as
+    | (proto.IMessageKey & {
+        remoteJidAlt?: string;
+        participantAlt?: string;
+      })
+    | null;
+  const remote = key?.remoteJid || key?.remoteJidAlt || "";
   const isGroup = remote.endsWith("@g.us") || remote.endsWith("@newsletter");
   if (!isGroup) return;
 
@@ -242,9 +254,9 @@ export async function handleMessageModeration(
 
     // Persist moderation only when deletion was attempted (log outcome)
     if (deletion && deletion.attempted) {
-      const fromJid = msg.key.remoteJid || "";
+      const fromJid = key?.remoteJid || key?.remoteJidAlt || "";
       const groupId = fromJid.endsWith("@g.us") ? fromJid.replace(/@g\.us$/, "") : fromJid;
-      const senderJid = msg.key.participant || msg.key.remoteJid || "";
+      const senderJid = key?.participantAlt ?? key?.participant ?? key?.remoteJidAlt ?? key?.remoteJid ?? "";
       const phone = (senderJid.split("@")[0] || "").replace(/\D/g, "");
       let deletionReason: string;
       if (hasGroupInviteLink) {
@@ -321,7 +333,7 @@ export async function handleMessageModeration(
   const timeIso = msg.messageTimestamp
     ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
     : new Date().toISOString();
-  const sender = msg.key.participant || msg.key.remoteJid || "unknown";
+  const sender = key?.participantAlt ?? key?.participant ?? key?.remoteJidAlt ?? key?.remoteJid ?? "unknown";
   const groupName = meta?.subject || remote;
 
   await sendTelegramFlaggedLog({
