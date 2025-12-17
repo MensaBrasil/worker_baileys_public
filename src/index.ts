@@ -1,5 +1,18 @@
 import { config as configDotenv } from "dotenv";
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } from "baileys";
+import {
+  makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  Browsers,
+  isHostedPnUser,
+  isJidBroadcast,
+  isJidGroup,
+  isJidNewsletter,
+  isJidStatusBroadcast,
+  isPnUser,
+  jidDecode,
+} from "baileys";
 import qrcode from "qrcode-terminal";
 import logger from "./utils/logger";
 
@@ -47,6 +60,26 @@ process.on("unhandledRejection", (reason) => {
 const uptimeUrl = process.env.UPTIME_URL;
 
 let mainLoopStarted = false;
+
+const normalizeDigits = (input: string | null | undefined) => (input || "").replace(/\D/g, "");
+
+const isGroupLikeJid = (jid: string | null | undefined): boolean =>
+  !!jid &&
+  (Boolean(isJidGroup(jid)) ||
+    Boolean(isJidStatusBroadcast(jid)) ||
+    Boolean(isJidBroadcast(jid)) ||
+    Boolean(isJidNewsletter(jid)));
+
+const isPhoneNumberJid = (jid: string | null | undefined): boolean =>
+  !!jid && (Boolean(isPnUser(jid)) || Boolean(isHostedPnUser(jid)) || jid.endsWith("@c.us"));
+
+const extractPhoneFromJid = (jid: string | null | undefined): string | null => {
+  if (!isPhoneNumberJid(jid)) return null;
+  const decoded = jidDecode(jid!);
+  const user = decoded?.user ?? jid?.split("@")[0] ?? "";
+  const digits = normalizeDigits(user);
+  return digits.length ? digits : null;
+};
 
 function logDisconnectDetails(err: unknown) {
   if (!err) return;
@@ -208,31 +241,47 @@ async function main() {
               }
             }
 
-            const isGroup = remoteJid.endsWith("@g.us") || remoteJid.endsWith("@newsletter");
-
             if (moderationMode) {
               await handleMessageModeration(sock, m);
             }
 
-            if (authMode && !isGroup) {
-              const normalizeDigits = (input: string | null | undefined) => (input || "").replace(/\D/g, "");
+            const shouldHandleAuth = authMode && !isGroupLikeJid(remoteJid) && isPhoneNumberJid(remoteJid);
+
+            if (shouldHandleAuth) {
               const pickContactNumber = () => {
                 const keyAny = m.key as Record<string, unknown>;
                 const toStr = (val: unknown) => (typeof val === "string" ? val : null);
-                const candidates = [
+
+                const jidCandidates = [
+                  remoteJid,
+                  toStr(keyAny.senderJid),
+                  toStr(keyAny.participant),
+                  toStr(keyAny.participantAlt),
+                  toStr(keyAny.remoteJidAlt),
+                ];
+
+                for (const jid of jidCandidates) {
+                  const phone = extractPhoneFromJid(jid);
+                  if (phone) return phone;
+                }
+
+                const pnCandidates = [
                   toStr(keyAny.senderPn),
                   toStr(keyAny.participantPn),
                   toStr(keyAny.participantAlt),
                   toStr(keyAny.remoteJidAlt),
-                  toStr(keyAny.participant),
-                  remoteJid,
                 ];
-                const digits = candidates.map(normalizeDigits).filter(Boolean);
-                const preferred = digits.find((d) => d.length >= 8 && d.length <= 15);
-                return preferred || digits[0] || "";
+
+                for (const candidate of pnCandidates) {
+                  const digits = normalizeDigits(candidate);
+                  if (digits) return digits;
+                }
+
+                return null;
               };
 
               const contactNumber = pickContactNumber();
+              if (!contactNumber) continue;
               try {
                 await checkAuth(contactNumber, worker.phone);
               } catch (e) {

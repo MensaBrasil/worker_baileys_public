@@ -1,4 +1,4 @@
-import type { WASocket, BaileysEventMap } from "baileys";
+import { isHostedPnUser, isPnUser, jidDecode, type WASocket, type BaileysEventMap } from "baileys";
 import logger from "../utils/logger";
 import { updateWhatsappAuthorizations, getAllWhatsAppWorkers, getWhatsappAuthorization } from "../db/pgsql";
 
@@ -8,10 +8,11 @@ function normalizeDigits(input: string): string {
 
 function jidToPhone(remoteJid: string | undefined | null): string | null {
   if (!remoteJid) return null;
-  // Expect something like "5511999998888@s.whatsapp.net"
-  const idx = remoteJid.indexOf("@");
-  if (idx === -1) return null;
-  const local = remoteJid.slice(0, idx);
+  const isPhoneUser = isPnUser(remoteJid) || isHostedPnUser(remoteJid) || remoteJid.endsWith("@c.us");
+  if (!isPhoneUser) return null;
+
+  const decoded = jidDecode(remoteJid);
+  const local = decoded?.user ?? remoteJid.split("@")[0] ?? "";
   const digits = normalizeDigits(local);
   return digits.length ? digits : null;
 }
