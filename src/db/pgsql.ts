@@ -166,6 +166,20 @@ export async function getAllWhatsAppWorkers(): Promise<WhatsAppWorker[]> {
 }
 
 /**
+ * Best-effort mapping between LID and phone number for future lookups.
+ */
+export async function upsertLidMapping(lid: string, phone: string, source = "unknown"): Promise<void> {
+  const p = getPool();
+  const query = `
+    INSERT INTO whatsapp_lid_mappings (lid, phone_number, source, last_seen)
+    VALUES ($1, $2, $3, NOW())
+    ON CONFLICT (lid)
+    DO UPDATE SET phone_number = EXCLUDED.phone_number, source = EXCLUDED.source, last_seen = NOW()
+  `;
+  await p.query(query, [lid, phone, source]);
+}
+
+/**
  * Retrieves all WhatsApp authorization records.
  */
 export async function getAllWhatsAppAuthorizations(): Promise<WhatsAppAuthorization[]> {
