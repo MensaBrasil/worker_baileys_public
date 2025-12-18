@@ -49,6 +49,8 @@ const ansi = {
   green: (s: string) => `\x1b[92m${s}\x1b[0m`,
 };
 
+type NormalizedMemberPhone = MemberPhone & { normalized: string; authKey: string };
+
 function normalizeDigits(phone: string | undefined | null): string | null {
   if (!phone) return null;
   const digits = phone.replace(/\D/g, "");
@@ -76,6 +78,34 @@ async function withTimeout<T>(p: Promise<T>, ms = CALL_TIMEOUT_MS): Promise<T> {
   } finally {
     if (t) clearTimeout(t);
   }
+}
+
+function dedupePhonesByAuthKey(phones: MemberPhone[], groupType: string): NormalizedMemberPhone[] {
+  const unique = new Map<string, NormalizedMemberPhone>();
+
+  for (const phone of phones) {
+    // For RJB groups we only keep legal representatives
+    if (groupType === "RJB" && !phone.is_legal_rep) continue;
+
+    const normalized = normalizeDigits(phone.phone);
+    if (!normalized) continue;
+
+    const authKey = normalized.slice(-8);
+    const existing = unique.get(authKey);
+    const candidate: NormalizedMemberPhone = { ...phone, normalized, authKey };
+
+    if (!existing) {
+      unique.set(authKey, candidate);
+      continue;
+    }
+
+    // Prefer entries marked as legal rep when duplicates share the same auth key
+    if (!existing.is_legal_rep && phone.is_legal_rep) {
+      unique.set(authKey, candidate);
+    }
+  }
+
+  return Array.from(unique.values());
 }
 
 // ---------- core flow ----------
@@ -123,28 +153,31 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
     return baseResult(0, 0);
   }
 
+  const normalizedPhones = dedupePhonesByAuthKey(memberPhones, item.group_type);
+  if (!normalizedPhones.length) {
+    const reason = `Nenhum telefone válido/autorizável para registration_id ${item.registration_id}.`;
+    console.log(ansi.red(reason));
+    await safeNotifyFailure(item.request_id, reason, {
+      item,
+      groupName: meta.subject ?? null,
+    });
+    await safeRegisterAttempt(item.request_id);
+    return baseResult(0, 0);
+  }
+
   const results: AddProcessResult = {
     added: false,
     inviteSent: false,
     alreadyInGroup: false,
     processedPhones: 0,
-    totalPhones: memberPhones.length,
+    totalPhones: normalizedPhones.length,
   };
 
   const notAuthorizedNumbers: string[] = [];
 
   // 4) Try to add each phone
-  for (const phone of memberPhones) {
-    // RJB rule: only legal representatives
-    if (item.group_type === "RJB" && !phone.is_legal_rep) {
-      console.log(ansi.yellow(`Ignorando ${phone.phone}: não é representante legal (RJB).`));
-      continue;
-    }
-
-    const normalized = normalizeDigits(phone.phone);
-    if (!normalized) continue;
-
-    const authKey = normalized.slice(-8);
+  for (const phone of normalizedPhones) {
+    const { normalized, authKey } = phone;
     const authorized = await getWhatsappAuthorization(authKey, worker.id);
     if (!authorized?.phone_number) {
       notAuthorizedNumbers.push(normalized);
