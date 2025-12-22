@@ -349,3 +349,47 @@ export async function getUnderageMemberAndLegalPhones(): Promise<
   const { rows } = await getPool().query(query);
   return rows as Array<{ registration_id: number; phone: string; is_legal_rep: boolean }>;
 }
+
+/**
+ * Returns phones and ages for members under 18 years old (member phones only).
+ */
+export async function getUnderageMemberPhonesWithAge(): Promise<
+  Array<{ registration_id: number; phone: string; age: number }>
+> {
+  const query = `
+    SELECT
+      r.registration_id,
+      p.phone_number AS phone,
+      DATE_PART('year', AGE(CURRENT_DATE, r.birth_date))::int AS age
+    FROM registration r
+    JOIN phones p ON p.registration_id = r.registration_id
+    WHERE r.birth_date IS NOT NULL
+      AND r.birth_date > (CURRENT_DATE - INTERVAL '18 years');
+  `;
+  const { rows } = await getPool().query(query);
+  return rows as Array<{ registration_id: number; phone: string; age: number }>;
+}
+
+/**
+ * Returns legal representative phones for members under 18 years old.
+ */
+export async function getUnderageLegalRepPhones(): Promise<Array<{ registration_id: number; phone: string }>> {
+  const query = `
+    SELECT r.registration_id, lr.phone AS phone
+    FROM registration r
+    JOIN legal_representatives lr ON lr.registration_id = r.registration_id
+    WHERE r.birth_date IS NOT NULL
+      AND r.birth_date > (CURRENT_DATE - INTERVAL '18 years')
+
+    UNION ALL
+
+    SELECT r.registration_id, lr.alternative_phone AS phone
+    FROM registration r
+    JOIN legal_representatives lr ON lr.registration_id = r.registration_id
+    WHERE r.birth_date IS NOT NULL
+      AND r.birth_date > (CURRENT_DATE - INTERVAL '18 years')
+      AND lr.alternative_phone IS NOT NULL;
+  `;
+  const { rows } = await getPool().query(query);
+  return rows as Array<{ registration_id: number; phone: string }>;
+}
