@@ -299,13 +299,14 @@ async function main(): Promise<void> {
       unique_phones: legalRepPhones.size,
     },
     removal_estimate: {
+      counted_entries: jbEntries,
       env_min_delay_secs: MIN_DELAY,
       env_max_delay_secs: MAX_DELAY,
       env_call_timeout_ms: CALL_TIMEOUT_MS,
       avg_per_removal_secs: Number(perRemovalSecs.toFixed(2)),
       total_estimated_secs: Number(totalRemovalSecs.toFixed(2)),
       total_estimated_human: formatDuration(totalRemovalSecs),
-      notes: "Estimate assumes 1 removal attempt per group entry + avg delay between removals.",
+      notes: "Estimate assumes 1 removal attempt per group entry (not unique phones) + avg delay between removals.",
     },
   };
 
