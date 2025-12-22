@@ -166,6 +166,12 @@ function formatDuration(seconds: number): string {
   return `${s}s`;
 }
 
+function last8Digits(input: string | undefined | null): string | null {
+  const digits = extractDigits(input);
+  if (!digits) return null;
+  return digits.length <= 8 ? digits : digits.slice(-8);
+}
+
 async function main(): Promise<void> {
   const program = new Command();
   program
@@ -224,6 +230,7 @@ async function main(): Promise<void> {
   let menor13Entries = 0;
   let legalRepEntries = 0;
   const legalRepPhones = new Set<string>();
+  let totalAllMergedEntries = 0;
 
   for (const g of groups) {
     const groupId = g.id.replace(/@g\.us$/, "");
@@ -234,6 +241,7 @@ async function main(): Promise<void> {
     }
     const members: GroupEntry[] = [];
     const legal_rep_entries: LegalRepEntry[] = [];
+    const groupRemovalDigits = new Set<string>();
 
     for (const p of g.participants ?? []) {
       const participantDigits = collectParticipantDigits(p as unknown as Record<string, unknown>);
@@ -259,6 +267,8 @@ async function main(): Promise<void> {
               menor13Entries += 1;
               menor13Phones.add(item.phone);
             }
+            const l8 = last8Digits(item.phone);
+            if (l8) groupRemovalDigits.add(l8);
           }
         }
 
@@ -268,12 +278,15 @@ async function main(): Promise<void> {
             legal_rep_entries.push({ registration_id: item.registration_id, phone: item.phone });
             legalRepEntries += 1;
             legalRepPhones.add(item.phone);
+            const l8 = last8Digits(item.phone);
+            if (l8) groupRemovalDigits.add(l8);
           }
         }
       }
     }
 
     if (members.length || legal_rep_entries.length) {
+      totalAllMergedEntries += groupRemovalDigits.size;
       results.push({ groupId, groupName, groupType, members, legal_reps: legal_rep_entries });
     }
   }
@@ -284,8 +297,7 @@ async function main(): Promise<void> {
   const avgDelaySecs = (MIN_DELAY + MAX_DELAY) / 2;
   const perRemovalSecs = avgDelaySecs + CALL_TIMEOUT_MS / 1000;
   const totalRemovalSecs = perRemovalSecs * jbEntries;
-  const totalAllEntries = jbEntries + menor13Entries + legalRepEntries;
-  const totalAllRemovalSecs = perRemovalSecs * totalAllEntries;
+  const totalAllRemovalSecs = perRemovalSecs * totalAllMergedEntries;
 
   const summary = {
     jb: {
@@ -308,10 +320,11 @@ async function main(): Promise<void> {
       avg_per_removal_secs: Number(perRemovalSecs.toFixed(2)),
       total_estimated_secs: Number(totalRemovalSecs.toFixed(2)),
       total_estimated_human: formatDuration(totalRemovalSecs),
-      total_all_entries: totalAllEntries,
+      total_all_entries: totalAllMergedEntries,
       total_all_estimated_secs: Number(totalAllRemovalSecs.toFixed(2)),
       total_all_estimated_human: formatDuration(totalAllRemovalSecs),
-      notes: "Estimate assumes 1 removal attempt per group entry (not unique phones) + avg delay between removals.",
+      notes:
+        "Estimate assumes 1 removal per group entry. For total_all, numbers are merged by last 8 digits within each group.",
     },
   };
 
