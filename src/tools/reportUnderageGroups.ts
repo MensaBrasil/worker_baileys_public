@@ -284,6 +284,8 @@ async function main(): Promise<void> {
   const avgDelaySecs = (MIN_DELAY + MAX_DELAY) / 2;
   const perRemovalSecs = avgDelaySecs + CALL_TIMEOUT_MS / 1000;
   const totalRemovalSecs = perRemovalSecs * jbEntries;
+  const totalAllEntries = jbEntries + menor13Entries + legalRepEntries;
+  const totalAllRemovalSecs = perRemovalSecs * totalAllEntries;
 
   const summary = {
     jb: {
@@ -306,6 +308,9 @@ async function main(): Promise<void> {
       avg_per_removal_secs: Number(perRemovalSecs.toFixed(2)),
       total_estimated_secs: Number(totalRemovalSecs.toFixed(2)),
       total_estimated_human: formatDuration(totalRemovalSecs),
+      total_all_entries: totalAllEntries,
+      total_all_estimated_secs: Number(totalAllRemovalSecs.toFixed(2)),
+      total_all_estimated_human: formatDuration(totalAllRemovalSecs),
       notes: "Estimate assumes 1 removal attempt per group entry (not unique phones) + avg delay between removals.",
     },
   };
@@ -325,6 +330,10 @@ async function main(): Promise<void> {
   console.log(
     `- Estimativa media p/ remover todos JBs: ${summary.removal_estimate.total_estimated_human} ` +
       `(${summary.removal_estimate.total_estimated_secs}s)`,
+  );
+  console.log(
+    `- Estimativa media p/ remover todos os numeros: ${summary.removal_estimate.total_all_estimated_human} ` +
+      `(${summary.removal_estimate.total_all_estimated_secs}s)`,
   );
   console.log(`\n📁 Saved detailed results to: ${file}`);
   process.exit(0);
