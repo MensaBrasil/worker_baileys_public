@@ -13,6 +13,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { getUnderageLegalRepPhones, getUnderageMemberPhonesWithAge } from "../db/pgsql";
 import type { BoomError } from "../types/errorTypes";
+import { checkGroupTypeByMeta } from "../utils/checkGroupType";
 
 configDotenv({ path: ".env" });
 
@@ -39,6 +40,7 @@ interface LegalRepEntry {
 interface GroupReport {
   groupId: string;
   groupName: string | null;
+  groupType: string;
   members: GroupEntry[];
   legal_reps: LegalRepEntry[];
 }
@@ -226,6 +228,10 @@ async function main(): Promise<void> {
   for (const g of groups) {
     const groupId = g.id.replace(/@g\.us$/, "");
     const groupName = g.subject ?? null;
+    const groupType = checkGroupTypeByMeta(g);
+    if (groupType !== "JB" && groupType !== "M.JB" && groupType !== "R.JB") {
+      continue;
+    }
     const members: GroupEntry[] = [];
     const legal_rep_entries: LegalRepEntry[] = [];
 
@@ -268,7 +274,7 @@ async function main(): Promise<void> {
     }
 
     if (members.length || legal_rep_entries.length) {
-      results.push({ groupId, groupName, members, legal_reps: legal_rep_entries });
+      results.push({ groupId, groupName, groupType, members, legal_reps: legal_rep_entries });
     }
   }
 
