@@ -12,7 +12,6 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import { getUnderageLegalRepPhones, getUnderageMemberPhonesWithAge } from "../db/pgsql";
-import { phoneToUserJid } from "../utils/phoneToJid";
 import type { BoomError } from "../types/errorTypes";
 
 configDotenv({ path: ".env" });
@@ -106,19 +105,53 @@ function classifyAge(age: number): AgeBucket | null {
   return null;
 }
 
-function indexByJid(records: UnderageRecord[]): Map<string, UnderageRecord[]> {
+function extractDigits(input: string | undefined | null): string | null {
+  if (!input) return null;
+  const beforeAt = input.split("@")[0] ?? "";
+  const beforeColon = beforeAt.split(":")[0] ?? beforeAt;
+  const digits = beforeColon.replace(/\D/g, "");
+  return digits || null;
+}
+
+function indexByDigits(records: UnderageRecord[]): Map<string, UnderageRecord[]> {
   const map = new Map<string, UnderageRecord[]>();
   for (const r of records) {
-    try {
-      const jid = phoneToUserJid(r.phone);
-      const arr = map.get(jid) ?? [];
-      arr.push(r);
-      map.set(jid, arr);
-    } catch {
-      // ignore invalid numbers
-    }
+    const digits = extractDigits(r.phone);
+    if (!digits) continue;
+    const arr = map.get(digits) ?? [];
+    arr.push(r);
+    map.set(digits, arr);
   }
   return map;
+}
+
+function indexLegalRepsByDigits(
+  records: Array<{ registration_id: number; phone: string }>,
+): Map<string, Array<{ registration_id: number; phone: string }>> {
+  const map = new Map<string, Array<{ registration_id: number; phone: string }>>();
+  for (const r of records) {
+    const digits = extractDigits(r.phone);
+    if (!digits) continue;
+    const arr = map.get(digits) ?? [];
+    arr.push(r);
+    map.set(digits, arr);
+  }
+  return map;
+}
+
+function collectParticipantDigits(p: Record<string, unknown>): Set<string> {
+  const digits = new Set<string>();
+  const push = (val: unknown) => {
+    if (typeof val !== "string") return;
+    const d = extractDigits(val);
+    if (d) digits.add(d);
+  };
+  push(p.id);
+  push((p as { jid?: unknown }).jid);
+  push((p as { phoneNumber?: unknown }).phoneNumber);
+  push((p as { lid?: unknown }).lid);
+  push((p as { user?: unknown }).user);
+  return digits;
 }
 
 function formatDuration(seconds: number): string {
@@ -172,7 +205,7 @@ async function main(): Promise<void> {
     }))
     .filter((r) => r.phone.length > 0 && Number.isFinite(r.age));
 
-  const jidIndex = indexByJid(normalized);
+  const digitsIndex = indexByDigits(normalized);
   const legalRepsNormalized: Array<{ registration_id: number; phone: string }> = legalReps
     .map((r) => ({
       registration_id: r.registration_id,
@@ -180,17 +213,7 @@ async function main(): Promise<void> {
     }))
     .filter((r) => r.phone.length > 0);
 
-  const legalRepsIndex = new Map<string, Array<{ registration_id: number; phone: string }>>();
-  for (const r of legalRepsNormalized) {
-    try {
-      const jid = phoneToUserJid(r.phone);
-      const arr = legalRepsIndex.get(jid) ?? [];
-      arr.push(r);
-      legalRepsIndex.set(jid, arr);
-    } catch {
-      // ignore invalid numbers
-    }
-  }
+  const legalRepsIndex = indexLegalRepsByDigits(legalRepsNormalized);
 
   const results: GroupReport[] = [];
   const jbPhones = new Set<string>();
@@ -207,36 +230,40 @@ async function main(): Promise<void> {
     const legal_rep_entries: LegalRepEntry[] = [];
 
     for (const p of g.participants ?? []) {
-      const list = jidIndex.get(p.id);
-      if (!list?.length) continue;
+      const participantDigits = collectParticipantDigits(p as unknown as Record<string, unknown>);
+      if (!participantDigits.size) continue;
 
-      for (const item of list) {
-        const bucket = classifyAge(item.age);
-        if (!bucket) continue;
-        const entry: GroupEntry = {
-          registration_id: item.registration_id,
-          phone: item.phone,
-          age: item.age,
-          bucket,
-        };
-        members.push(entry);
-        if (bucket === "JB") {
-          jbEntries += 1;
-          jbPhones.add(item.phone);
-        } else if (bucket === "MENOR13") {
-          menor13Entries += 1;
-          menor13Phones.add(item.phone);
+      for (const d of participantDigits) {
+        const list = digitsIndex.get(d);
+        if (list?.length) {
+          for (const item of list) {
+            const bucket = classifyAge(item.age);
+            if (!bucket) continue;
+            const entry: GroupEntry = {
+              registration_id: item.registration_id,
+              phone: item.phone,
+              age: item.age,
+              bucket,
+            };
+            members.push(entry);
+            if (bucket === "JB") {
+              jbEntries += 1;
+              jbPhones.add(item.phone);
+            } else if (bucket === "MENOR13") {
+              menor13Entries += 1;
+              menor13Phones.add(item.phone);
+            }
+          }
         }
-      }
-    }
 
-    for (const p of g.participants ?? []) {
-      const reps = legalRepsIndex.get(p.id);
-      if (!reps?.length) continue;
-      for (const item of reps) {
-        legal_rep_entries.push({ registration_id: item.registration_id, phone: item.phone });
-        legalRepEntries += 1;
-        legalRepPhones.add(item.phone);
+        const reps = legalRepsIndex.get(d);
+        if (reps?.length) {
+          for (const item of reps) {
+            legal_rep_entries.push({ registration_id: item.registration_id, phone: item.phone });
+            legalRepEntries += 1;
+            legalRepPhones.add(item.phone);
+          }
+        }
       }
     }
 
