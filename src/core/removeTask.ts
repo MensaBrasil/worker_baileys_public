@@ -1,12 +1,12 @@
 import { config as configDotenv } from "dotenv";
 import type { WASocket, GroupMetadata } from "baileys";
 
-import { getFromRemoveQueue } from "../db/redis";
+import { getFromRemoveQueue, requeueRemoveQueue } from "../db/redis";
 import { recordUserExitFromGroup } from "../db/pgsql";
 import { notifyRemovalFailure } from "../utils/telegram";
 import { delaySecs } from "../utils/delay";
 import { phoneToUserJid, asGroupJid } from "../utils/phoneToJid";
-import { findParticipant } from "../utils/waParticipants";
+import { findParticipant, isParticipantAdmin } from "../utils/waParticipants";
 
 configDotenv({ path: ".env" });
 
@@ -37,6 +37,55 @@ const ansi = {
   green: (s: string) => `\x1b[92m${s}\x1b[0m`,
   white: (s: string) => `\x1b[1;37m${s}\x1b[0m`,
 };
+
+function getSelfIdentity(sock: WASocket): { id: string | null; alt: string | null } {
+  const selfId = sock.user?.id ?? null;
+  const selfAlt = (sock.user as { phoneNumber?: string } | undefined)?.phoneNumber ?? null;
+  return { id: selfId, alt: selfAlt };
+}
+
+function getGroupArticle(entity: "grupo" | "comunidade"): string {
+  return entity === "grupo" ? "do grupo" : "da comunidade";
+}
+
+async function checkSelfAccess(
+  sock: WASocket,
+  groupId: string,
+  entity: "grupo" | "comunidade",
+): Promise<{ ok: true; groupName: string | null } | { ok: false; reason: string }> {
+  try {
+    const groupJid = asGroupJid(groupId);
+    const meta = await safeGroupMetadata(sock, groupJid);
+    if (!meta) {
+      return { ok: false, reason: `Metadata ${getGroupArticle(entity)} ${groupId} indisponível.` };
+    }
+
+    const { id, alt } = getSelfIdentity(sock);
+    if (!id && !alt) {
+      return { ok: false, reason: `Identidade do bot indisponível para ${getGroupArticle(entity)} ${groupId}.` };
+    }
+
+    const participant = findParticipant(meta, id ?? null, { altId: alt ?? null });
+    if (!participant) {
+      return {
+        ok: false,
+        reason: `Bot não faz parte ${getGroupArticle(entity)} ${meta.subject ?? groupJid}.`,
+      };
+    }
+
+    const isAdmin = isParticipantAdmin(meta, id ?? null, { altId: alt ?? null });
+    if (!isAdmin) {
+      return {
+        ok: false,
+        reason: `Bot não é admin ${getGroupArticle(entity)} ${meta.subject ?? groupJid}.`,
+      };
+    }
+
+    return { ok: true, groupName: meta.subject ?? groupJid };
+  } catch {
+    return { ok: false, reason: `Falha ao acessar ${getGroupArticle(entity)} ${groupId}.` };
+  }
+}
 
 function asStatusCode(status: unknown): number | null {
   if (typeof status === "number") return status;
@@ -84,6 +133,22 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
         (communityId ? ` (e comunidade ${communityId})` : ""),
     ),
   );
+
+  if (communityId) {
+    const communityAccess = await checkSelfAccess(sock, communityId, "comunidade");
+    if (!communityAccess.ok) {
+      console.log(ansi.yellow(`${communityAccess.reason} Reenviando para a fila.`));
+      await requeueRemoveQueue(item);
+      return false;
+    }
+  }
+
+  const groupAccess = await checkSelfAccess(sock, groupId, "grupo");
+  if (!groupAccess.ok) {
+    console.log(ansi.yellow(`${groupAccess.reason} Reenviando para a fila.`));
+    await requeueRemoveQueue(item);
+    return false;
+  }
 
   const result = await removeMemberFromGroup(sock, phone, groupId, communityId || undefined);
 

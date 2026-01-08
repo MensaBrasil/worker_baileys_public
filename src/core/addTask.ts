@@ -5,7 +5,7 @@ import { AddAttemptResult, AddProcessResult, MemberPhone, Worker } from "../type
 import type { MemberStatus } from "../types/pgsqlTypes";
 import { AddQueueItem } from "../types/redisTypes";
 import { phoneToUserJid, asGroupJid } from "../utils/phoneToJid";
-import { isParticipantAdmin } from "../utils/waParticipants";
+import { findParticipant, isParticipantAdmin } from "../utils/waParticipants";
 import { delaySecs } from "../utils/delay";
 import {
   getMemberPhoneNumbers,
@@ -16,7 +16,7 @@ import {
   sendAdditionFailedReason,
 } from "../db/pgsql";
 import { notifyAdditionFailure } from "../utils/telegram";
-import { getFromAddQueue } from "../db/redis";
+import { getFromAddQueue, requeueAddQueue } from "../db/redis";
 
 // ---------- env & config ----------
 configDotenv({ path: ".env" });
@@ -108,6 +108,18 @@ function dedupePhonesByAuthKey(phones: MemberPhone[], groupType: string): Normal
   return Array.from(unique.values());
 }
 
+function getSelfIdentity(sock: WASocket): { id: string | null; alt: string | null } {
+  const selfId = sock.user?.id ?? null;
+  const selfAlt = (sock.user as { phoneNumber?: string } | undefined)?.phoneNumber ?? null;
+  return { id: selfId, alt: selfAlt };
+}
+
+function isSelfInGroup(sock: WASocket, meta: GroupMetadata): boolean {
+  const { id, alt } = getSelfIdentity(sock);
+  if (!id && !alt) return false;
+  return Boolean(findParticipant(meta, id ?? null, { altId: alt ?? null }));
+}
+
 // ---------- core flow ----------
 /**
  * Reads an item from the queue and processes group inclusion.
@@ -128,15 +140,27 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
   console.log(ansi.cyan(`Processando inclusão: reg=${item.registration_id} -> grupo=${groupJid}`));
 
   // 2) Check admin in target group
-  const meta = await safeGroupMetadata(sock, groupJid);
+  let meta: GroupMetadata;
+  try {
+    meta = await safeGroupMetadata(sock, groupJid);
+  } catch {
+    const reason = `Sem acesso à metadata do grupo ${groupJid}; reenviando para a fila.`;
+    console.log(ansi.yellow(reason));
+    await requeueAddQueue(item);
+    return baseResult(0, 0);
+  }
+
+  if (!isSelfInGroup(sock, meta)) {
+    const reason = `Bot não faz parte do grupo ${meta.subject ?? groupJid}; reenviando para a fila.`;
+    console.log(ansi.yellow(reason));
+    await requeueAddQueue(item);
+    return baseResult(0, 0);
+  }
+
   if (!checkIfSelfIsAdmin(sock, meta)) {
-    const reason = `Bot não é admin no grupo ${meta.subject ?? groupJid}.`;
-    console.log(ansi.red(reason));
-    await safeNotifyFailure(item.request_id, reason, {
-      item,
-      groupName: meta.subject ?? null,
-    });
-    await safeRegisterAttempt(item.request_id);
+    const reason = `Bot não é admin no grupo ${meta.subject ?? groupJid}; reenviando para a fila.`;
+    console.log(ansi.yellow(reason));
+    await requeueAddQueue(item);
     return baseResult(0, 0);
   }
 

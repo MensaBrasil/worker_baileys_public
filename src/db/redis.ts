@@ -95,10 +95,26 @@ export async function getFromAddQueue(): Promise<AddQueueItem | null> {
 }
 
 /**
+ * Re-enqueues an addQueue item to the end of the queue.
+ */
+export async function requeueAddQueue(item: AddQueueItem): Promise<void> {
+  await connect();
+  await client.rPush(QueueKey.Add, JSON.stringify(item));
+}
+
+/**
  * Retrieves and removes the first item from removeQueue.
  */
 export async function getFromRemoveQueue(): Promise<RemoveQueueItem | null> {
   await connect();
   const queueItem = await client.lPop(QueueKey.Remove);
   return queueItem ? JSON.parse(queueItem) : null;
+}
+
+/**
+ * Re-enqueues a removeQueue item to the end of the queue.
+ */
+export async function requeueRemoveQueue(item: RemoveQueueItem): Promise<void> {
+  await connect();
+  await client.rPush(QueueKey.Remove, JSON.stringify(item));
 }
