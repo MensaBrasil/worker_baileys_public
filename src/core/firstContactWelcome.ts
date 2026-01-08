@@ -172,8 +172,9 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         if (lockResult === null) {
           logger.warn(
             { groupId: update.id, participant: participantTag(member) },
-            "Não foi possível verificar lock de primeiro contato; prosseguindo mesmo assim.",
+            "Não foi possível verificar lock de primeiro contato; envio ignorado.",
           );
+          continue;
         }
 
         const mentionTag = `@${participantTag(member)}`;
