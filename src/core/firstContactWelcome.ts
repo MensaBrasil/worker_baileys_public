@@ -11,6 +11,21 @@ let welcomeAudioPromise: Promise<Buffer | null> | null = null;
 const WELCOME_ACTIONS: ReadonlySet<ParticipantAction> = new Set<ParticipantAction>(["add"]);
 const AUDIO_REQUEST_WINDOW_MS = 10 * 60 * 60 * 1000;
 const WELCOME_DEDUP_TTL_MS = AUDIO_REQUEST_WINDOW_MS;
+const MENSAMPA_REGIONAL_GROUP_NAME = "Mensampa Regional";
+const MENSAMPA_REGIONAL_WELCOME_TEXT = [
+  "Seja muito bem-vindo(a)! 😊",
+  "",
+  "Que bom ter você aqui!",
+  "Fique à vontade para se apresentar, puxar assunto, compartilhar seus interesses, falar do cotidiano, fazer amizades ou simplesmente acompanhar as conversas. Este espaço é construído por todos nós, no ritmo de cada um.",
+  "",
+  "Fique atento(a): estamos sempre fixando mensagens com temas, avisos e conteúdos interessantes para debate. Vale a pena conferir de vez em quando 😉",
+  "",
+  "E não se esqueça de ler as regras disponíveis na descrição do grupo. Elas são importantes para manter um ambiente leve, respeitoso e agradável para todos.",
+  "",
+  "Qualquer dúvida ou necessidade de orientação, é só chamar um administrador no privado.",
+  "",
+  "Sinta-se em casa e aproveite o grupo!",
+].join("\n");
 
 type PendingAudioRequest = {
   expiresAt: number;
@@ -111,19 +126,25 @@ function shouldWelcome(action: GroupParticipantsUpdate["action"] | undefined): b
 
 export function registerFirstContactWelcome(sock: WASocket): void {
   const targetGroupName = process.env.FIRST_CONTACT_GROUP_NAME?.trim();
+  const normalizedMensampaGroupName = MENSAMPA_REGIONAL_GROUP_NAME.toLowerCase();
 
   if (!targetGroupName) {
     logger.info("Regra de primeiro contato desativada: FIRST_CONTACT_GROUP_NAME não definido.");
-    return;
   }
 
-  const normalizedTargetName = targetGroupName.toLowerCase();
+  logger.info({ groupName: MENSAMPA_REGIONAL_GROUP_NAME }, "Regra de boas-vindas Mensampa Regional ativada.");
+
+  const normalizedTargetName = targetGroupName?.toLowerCase();
   const groupNameCache = new Map<string, string>();
   const botJid = sock.user?.id;
 
-  logger.info({ groupName: targetGroupName }, "Regra de primeiro contato ativada; aguardando novos participantes.");
+  if (targetGroupName) {
+    logger.info({ groupName: targetGroupName }, "Regra de primeiro contato ativada; aguardando novos participantes.");
+  }
 
-  void getWelcomeAudioBuffer();
+  if (targetGroupName) {
+    void getWelcomeAudioBuffer();
+  }
 
   sock.ev.on("group-participants.update", async (update) => {
     try {
@@ -148,8 +169,11 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         "Evento recebido para regra de primeiro contato.",
       );
 
-      const isTargetGroup = await ensureGroupCached(sock, update, normalizedTargetName, groupNameCache);
-      if (!isTargetGroup) {
+      const isFirstContactGroup = normalizedTargetName
+        ? await ensureGroupCached(sock, update, normalizedTargetName, groupNameCache)
+        : false;
+      const isMensampaGroup = await ensureGroupCached(sock, update, normalizedMensampaGroupName, groupNameCache);
+      if (!isFirstContactGroup && !isMensampaGroup) {
         logger.debug({ groupId: update.id }, "Atualização ignorada: grupo não corresponde ao alvo.");
         return;
       }
@@ -177,71 +201,84 @@ export function registerFirstContactWelcome(sock: WASocket): void {
           continue;
         }
 
-        const mentionTag = `@${participantTag(member)}`;
-        const welcomeText = [
-          `Olá ${mentionTag}, você é um novo mensan? em breve um humano veterano te recepcionará. se você já é veterano, aproveita pra se apresentar de novo!`,
-          "",
-          "ah, segue um formulário de sugestão caso queira se apresentar.",
-          "",
-          "enquanto espera, gostaria de ouvir uma música de boas-vindas? (é uma piadinha apenas). se sim, digite 1.",
-        ].join("\n");
+        if (isFirstContactGroup) {
+          const mentionTag = `@${participantTag(member)}`;
+          const welcomeText = [
+            `Olá ${mentionTag}, você é um novo mensan? em breve um humano veterano te recepcionará. se você já é veterano, aproveita pra se apresentar de novo!`,
+            "",
+            "ah, segue um formulário de sugestão caso queira se apresentar.",
+            "",
+            "enquanto espera, gostaria de ouvir uma música de boas-vindas? (é uma piadinha apenas). se sim, digite 1.",
+          ].join("\n");
 
-        const formText = [
-          "⟬📝⟭▸ Nome (pronome?): ",
-          "⟬🗓⟭▸ Idade:",
-          "⟬🧠⟭▸ Tempo de Mensa:",
-          "⟬🔎⟭▸ Como conheceu a Mensa:",
-          "⟬🤓⟭▸ Quais suas expectativas sobre a Mensa (ou os mensans):",
-          "⟬🏡⟭▸ Cidade e Estado:",
-          "⟬💼⟭▸ Profissão:",
-          "⟬👁⟭▸ Hiperfoco atual:",
-          "⟬📢⟭▸ Há mais algo que gostaria de compartilhar?",
-          "",
-          "escolha uma:",
-          "⟬🌿⟭▸ Fale sobre Coentro:",
-          "⟬🧟‍♂⟭▸ Apocalipse de sua preferência:",
-          "⟬🤤⟭▸ O que é bom mas é ruim? E algo que é ruim, mas é bom?",
-        ].join("\n");
+          const formText = [
+            "⟬📝⟭▸ Nome (pronome?): ",
+            "⟬🗓⟭▸ Idade:",
+            "⟬🧠⟭▸ Tempo de Mensa:",
+            "⟬🔎⟭▸ Como conheceu a Mensa:",
+            "⟬🤓⟭▸ Quais suas expectativas sobre a Mensa (ou os mensans):",
+            "⟬🏡⟭▸ Cidade e Estado:",
+            "⟬💼⟭▸ Profissão:",
+            "⟬👁⟭▸ Hiperfoco atual:",
+            "⟬📢⟭▸ Há mais algo que gostaria de compartilhar?",
+            "",
+            "escolha uma:",
+            "⟬🌿⟭▸ Fale sobre Coentro:",
+            "⟬🧟‍♂⟭▸ Apocalipse de sua preferência:",
+            "⟬🤤⟭▸ O que é bom mas é ruim? E algo que é ruim, mas é bom?",
+          ].join("\n");
 
-        await sock.sendMessage(update.id, {
-          text: welcomeText,
-          mentions: [member],
-        });
+          await sock.sendMessage(update.id, {
+            text: welcomeText,
+            mentions: [member],
+          });
 
-        await sock.sendMessage(update.id, {
-          text: formText,
-        });
+          await sock.sendMessage(update.id, {
+            text: formText,
+          });
 
-        logger.info({ groupId: update.id, participant: participantTag(member) }, "Mensagem de boas-vindas enviada.");
+          logger.info({ groupId: update.id, participant: participantTag(member) }, "Mensagem de boas-vindas enviada.");
 
-        const groupRequests = pendingAudioRequests.get(update.id) ?? new Map<string, PendingAudioRequest>();
-        const existingRequest = groupRequests.get(member);
-        if (existingRequest) {
-          clearTimeout(existingRequest.timeoutId);
+          const groupRequests = pendingAudioRequests.get(update.id) ?? new Map<string, PendingAudioRequest>();
+          const existingRequest = groupRequests.get(member);
+          if (existingRequest) {
+            clearTimeout(existingRequest.timeoutId);
+          }
+
+          const timeoutId = setTimeout(() => {
+            const requestsForGroup = pendingAudioRequests.get(update.id);
+            if (!requestsForGroup) {
+              return;
+            }
+
+            requestsForGroup.delete(member);
+            if (!requestsForGroup.size) {
+              pendingAudioRequests.delete(update.id);
+            }
+          }, AUDIO_REQUEST_WINDOW_MS);
+
+          groupRequests.set(member, {
+            expiresAt: Date.now() + AUDIO_REQUEST_WINDOW_MS,
+            timeoutId,
+          });
+          pendingAudioRequests.set(update.id, groupRequests);
+
+          logger.info(
+            { groupId: update.id, participant: participantTag(member), expiresInMs: AUDIO_REQUEST_WINDOW_MS },
+            "Janela para áudio de boas-vindas iniciada.",
+          );
         }
 
-        const timeoutId = setTimeout(() => {
-          const requestsForGroup = pendingAudioRequests.get(update.id);
-          if (!requestsForGroup) {
-            return;
-          }
+        if (isMensampaGroup) {
+          await sock.sendMessage(update.id, {
+            text: MENSAMPA_REGIONAL_WELCOME_TEXT,
+          });
 
-          requestsForGroup.delete(member);
-          if (!requestsForGroup.size) {
-            pendingAudioRequests.delete(update.id);
-          }
-        }, AUDIO_REQUEST_WINDOW_MS);
-
-        groupRequests.set(member, {
-          expiresAt: Date.now() + AUDIO_REQUEST_WINDOW_MS,
-          timeoutId,
-        });
-        pendingAudioRequests.set(update.id, groupRequests);
-
-        logger.info(
-          { groupId: update.id, participant: participantTag(member), expiresInMs: AUDIO_REQUEST_WINDOW_MS },
-          "Janela para áudio de boas-vindas iniciada.",
-        );
+          logger.info(
+            { groupId: update.id, participant: participantTag(member) },
+            "Mensagem de boas-vindas Mensampa Regional enviada.",
+          );
+        }
       }
     } catch (err) {
       logger.error({ err, update }, "Erro ao executar regra de primeiro contato");
