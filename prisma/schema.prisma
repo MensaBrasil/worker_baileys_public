@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model account {
+  phone_number String     @id
+  name         String?
+  situacao     String?
+  created_at   DateTime   @default(now())
+  updated_at   DateTime   @updatedAt
+  contacts     contact[]
+  conversas    conversa[]
+}
+
+model contact {
+  phone_number  String     @id
+  name          String?
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+  account_phone String
+  account       account    @relation(fields: [account_phone], references: [phone_number])
+  conversas     conversa[]
+}
+
+model conversa {
+  id                    String    @id @default(uuid())
+  phone_number_accounts String
+  phone_number_contacts String
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+  account               account   @relation(fields: [phone_number_accounts], references: [phone_number])
+  contact               contact   @relation(fields: [phone_number_contacts], references: [phone_number])
+  messages              message[]
+
+  @@unique([phone_number_accounts, phone_number_contacts])
+}
+
+model message {
+  id                  String    @id @default(uuid())
+  conversa_id         String
+  type                String?
+  phone               String?
+  status              String?
+  is_sent             Boolean?
+  whatsapp_message_id String
+  remote_jid          String
+  from_me             Boolean
+  direct_message      Boolean   @default(false)
+  timestamp_original  DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+  raw_json            Json?
+  conversa            conversa  @relation(fields: [conversa_id], references: [id])
+
+  @@unique([conversa_id, whatsapp_message_id])
+  @@index([conversa_id])
+  @@index([remote_jid, timestamp_original])
+}
+
+model account_temp {
+  session    String   @id
+  created_at DateTime @default(now())
+}
+
+model WaAuthCreds {
+  sessionId String   @id
+  creds     Json
+  updatedAt DateTime @updatedAt
+}
+
+model WaAuthKey {
+  id        BigInt   @id @default(autoincrement())
+  sessionId String
+  category  String
+  keyId     String
+  value     Json?
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, category, keyId])
+  @@index([sessionId, category, keyId])
+}

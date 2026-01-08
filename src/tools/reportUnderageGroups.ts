@@ -2,7 +2,6 @@ import { Command } from "commander";
 import { config as configDotenv } from "dotenv";
 import {
   makeWASocket,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   Browsers,
   DisconnectReason,
@@ -12,6 +11,8 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import { getUnderageLegalRepPhones, getUnderageMemberPhonesWithAge } from "../db/pgsql";
+import { usePostgresAuthState } from "../baileys/use-postgres-auth-state";
+import { getAuthPool } from "../db/authStatePg";
 import type { BoomError } from "../types/errorTypes";
 import { checkGroupTypeByMeta } from "../utils/checkGroupType";
 
@@ -72,7 +73,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Re-link the device (./auth)."));
+        reject(new Error("Session logged out. Re-link the device (auth DB)."));
       }
     };
     const cleanup = () => {
@@ -179,7 +180,7 @@ async function main(): Promise<void> {
     .description("Generate report of underage members (JBs and <13) present in groups.")
     .parse(process.argv);
 
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), "default");
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     version,

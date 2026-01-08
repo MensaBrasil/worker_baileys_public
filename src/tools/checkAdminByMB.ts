@@ -2,7 +2,6 @@ import { Command } from "commander";
 import { config as configDotenv } from "dotenv";
 import {
   makeWASocket,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   Browsers,
   DisconnectReason,
@@ -13,6 +12,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { getMemberPhoneNumbers } from "../db/pgsql";
 import { phoneToUserJid } from "../utils/phoneToJid";
+import { usePostgresAuthState } from "../baileys/use-postgres-auth-state";
+import { getAuthPool } from "../db/authStatePg";
 import type { BoomError } from "../types/errorTypes";
 
 configDotenv({ path: ".env" });
@@ -69,7 +70,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Re-link the device (./auth)."));
+        reject(new Error("Session logged out. Re-link the device (auth DB)."));
       }
     };
     const cleanup = () => {
@@ -132,7 +133,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), "default");
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     version,

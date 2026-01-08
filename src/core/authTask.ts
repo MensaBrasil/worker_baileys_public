@@ -1,4 +1,4 @@
-import { isHostedPnUser, isPnUser, jidDecode, type WASocket, type BaileysEventMap } from "baileys";
+import { isHostedPnUser, isPnUser, jidDecode, type WASocket, type BaileysEventMap, type proto } from "baileys";
 import logger from "../utils/logger";
 import { updateWhatsappAuthorizations, getAllWhatsAppWorkers, getWhatsappAuthorization } from "../db/pgsql";
 
@@ -8,7 +8,11 @@ function normalizeDigits(input: string): string {
 
 function jidToPhone(remoteJid: string | undefined | null): string | null {
   if (!remoteJid) return null;
-  const isPhoneUser = isPnUser(remoteJid) || isHostedPnUser(remoteJid) || remoteJid.endsWith("@c.us");
+  const isPhoneUser =
+    isPnUser(remoteJid) ||
+    isHostedPnUser(remoteJid) ||
+    remoteJid.endsWith("@c.us") ||
+    remoteJid.endsWith("@s.whatsapp.net");
   if (!isPhoneUser) return null;
 
   const decoded = jidDecode(remoteJid);
@@ -17,14 +21,23 @@ function jidToPhone(remoteJid: string | undefined | null): string | null {
   return digits.length ? digits : null;
 }
 
-function contactToPhone(
-  contact: { id?: string | null; phoneNumber?: string | null } | string | undefined | null,
-): string | null {
-  if (!contact) return null;
-  if (typeof contact === "string") return jidToPhone(contact);
-  const fromPhoneNumber = normalizeDigits(String(contact.phoneNumber || ""));
-  if (fromPhoneNumber) return fromPhoneNumber;
-  return jidToPhone(contact.id ?? null);
+function pickPhoneFromMessage(msg: proto.IWebMessageInfo): string | null {
+  const key = msg.key as {
+    remoteJid?: string | null;
+    participant?: string | null;
+    participantAlt?: string | null;
+    remoteJidAlt?: string | null;
+  };
+  const remoteJid = key?.remoteJid ?? null;
+  if (!remoteJid || remoteJid.endsWith("@g.us")) return null;
+
+  const candidates = [key.participantAlt, key.remoteJidAlt, key.participant, remoteJid];
+  for (const jid of candidates) {
+    const phone = jidToPhone(jid);
+    if (phone) return phone;
+  }
+
+  return null;
 }
 
 /**
@@ -77,7 +90,7 @@ export async function checkAuth(
 
 /**
  * Upsert authorizations for multiple phone numbers using Baileys' initial chat/contacts set.
- * - Collects numbers from non-group chats and contacts available after connect.
+ * - Collects numbers from direct messages only (no groups).
  * - Runs once at startup.
  */
 export async function addNewAuthorizations(sock: WASocket, workerPhone: string): Promise<void> {
@@ -94,54 +107,40 @@ export async function addNewAuthorizations(sock: WASocket, workerPhone: string):
       throw new Error(`Worker not found for phone number: ${workerPhone}`);
     }
 
-    // Try to capture initial chats/contacts via Baileys events with a short window.
+    // Try to capture initial direct messages via Baileys events with a short window.
     // If none arrive, we proceed with zero updates.
     const collectedPhones = new Set<string>();
-
-    // Helper to record a phone from a contact/chat entry
-    const recordContact = (entry: { id?: string | null; phoneNumber?: string | null } | string | null | undefined) => {
-      const p = contactToPhone(entry);
-      if (p) collectedPhones.add(p);
-    };
 
     // We create a promise that resolves after a short collection period.
     await new Promise<void>((resolve) => {
       const timers: NodeJS.Timeout[] = [];
 
-      // Collect from initial messaging history set (includes chats & contacts)
-      const onHistorySet: (arg: BaileysEventMap["messaging-history.set"]) => void = ({ chats, contacts }) => {
-        for (const c of chats) {
-          const isGroup = c.id?.endsWith("@g.us");
-          if (!isGroup) recordContact(c);
+      // Collect from initial messaging history set (messages only)
+      const onHistorySet: (arg: BaileysEventMap["messaging-history.set"]) => void = ({ messages }) => {
+        for (const m of messages ?? []) {
+          const phone = pickPhoneFromMessage(m);
+          if (phone) collectedPhones.add(phone);
         }
-        for (const ct of contacts) recordContact(ct);
         // give a small buffer for possible subsequent upserts
         timers.push(setTimeout(cleanupAndResolve, 200));
       };
 
-      // Collect from chat upserts (just in case)
-      const onChatsUpsert: (arg: BaileysEventMap["chats.upsert"]) => void = (chats) => {
-        for (const c of chats) {
-          const isGroup = c.id?.endsWith("@g.us");
-          if (!isGroup) recordContact(c);
+      // Collect from message upserts during the window
+      const onMessagesUpsert: (arg: BaileysEventMap["messages.upsert"]) => void = ({ messages }) => {
+        for (const m of messages ?? []) {
+          const phone = pickPhoneFromMessage(m);
+          if (phone) collectedPhones.add(phone);
         }
-      };
-
-      // Collect from contacts upsert as a fallback (non-groups)
-      const onContactsUpsert: (arg: BaileysEventMap["contacts.upsert"]) => void = (contacts) => {
-        for (const ct of contacts) recordContact(ct);
       };
 
       const cleanupAndResolve = () => {
         sock.ev.off("messaging-history.set", onHistorySet);
-        sock.ev.off("chats.upsert", onChatsUpsert);
-        sock.ev.off("contacts.upsert", onContactsUpsert);
+        sock.ev.off("messages.upsert", onMessagesUpsert);
         resolve();
       };
 
       sock.ev.on("messaging-history.set", onHistorySet);
-      sock.ev.on("chats.upsert", onChatsUpsert);
-      sock.ev.on("contacts.upsert", onContactsUpsert);
+      sock.ev.on("messages.upsert", onMessagesUpsert);
 
       // Safety timeout: don’t wait too long if nothing arrives
       timers.push(setTimeout(cleanupAndResolve, 1500));

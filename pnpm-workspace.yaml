@@ -1,4 +1,6 @@
 onlyBuiltDependencies:
+  - '@prisma/engines'
   - baileys
+  - prisma
   - protobufjs
   - sharp
