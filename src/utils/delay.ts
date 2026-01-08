@@ -43,6 +43,7 @@ export async function delaySecs(minSeconds: number, maxSeconds: number, jitterSe
     timer = setTimeout(res, totalMs);
   });
 
+  let cleanupKeypress = () => {};
   const keypress = new Promise<void>((res) => {
     if (!process.stdin.isTTY) {
       return;
@@ -52,10 +53,9 @@ export async function delaySecs(minSeconds: number, maxSeconds: number, jitterSe
       const ch = buf.toString("utf8");
       if (ch === "s" || ch === "S") {
         skipped = true;
-        cleanup();
         res();
       } else if (buf.length && buf[0] === 3) {
-        cleanup();
+        res();
       }
     };
 
@@ -69,6 +69,8 @@ export async function delaySecs(minSeconds: number, maxSeconds: number, jitterSe
       process.stdin.pause();
     };
 
+    cleanupKeypress = cleanup;
+
     try {
       process.stdin.resume();
       if (process.stdin.isTTY) process.stdin.setRawMode(true);
@@ -79,6 +81,7 @@ export async function delaySecs(minSeconds: number, maxSeconds: number, jitterSe
   });
 
   await Promise.race([sleep, keypress]);
+  cleanupKeypress();
   clearInterval(interval);
   if (timer) clearTimeout(timer);
 
