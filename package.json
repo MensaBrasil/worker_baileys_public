@@ -17,6 +17,7 @@
     "getAdmins": "node dist/tools/checkAdminByMB.js",
     "getJBAdmins": "node dist/tools/checkJBAdmins.js",
     "reportUnderageGroups": "node dist/tools/reportUnderageGroups.js",
+    "addAdminToAllGroups": "node dist/tools/addAdminToAllGroups.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
