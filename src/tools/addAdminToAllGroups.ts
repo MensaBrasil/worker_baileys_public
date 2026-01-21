@@ -45,6 +45,7 @@ const DEFAULT_MIN_DELAY = parseEnvNumber("MIN_DELAY", 3);
 const DEFAULT_MAX_DELAY = parseEnvNumber("MAX_DELAY", 6);
 const DEFAULT_DELAY_JITTER = parseEnvNumber("DELAY_JITTER", 1);
 const DEFAULT_CALL_TIMEOUT_MS = parseEnvNumber("CALL_TIMEOUT_MS", 15_000);
+const DEFAULT_PROMOTE_DELAY = parseEnvNumber("PROMOTE_DELAY_SECONDS", 2);
 
 function parseNumberOption(label: string, value: string | undefined, fallback: number): number {
   if (value == null || value === "") return fallback;
@@ -165,6 +166,12 @@ async function tryParticipantsUpdate(
   }
 }
 
+async function delayBeforePromote(seconds: number): Promise<void> {
+  if (!Number.isFinite(seconds) || seconds <= 0) return;
+  const ms = Math.max(0, Math.round(seconds * 1000));
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 async function main(): Promise<void> {
   const program = new Command();
   program
@@ -175,6 +182,7 @@ async function main(): Promise<void> {
     .option("--min-delay <seconds>", "Delay mínimo entre operações (segundos)")
     .option("--max-delay <seconds>", "Delay máximo entre operações (segundos)")
     .option("--delay-jitter <seconds>", "Jitter adicional para o delay (segundos)")
+    .option("--promote-delay <seconds>", "Delay entre adicionar e promover (segundos)")
     .option("--timeout-ms <ms>", "Timeout por chamada Baileys (ms)")
     .parse(process.argv);
 
@@ -183,6 +191,7 @@ async function main(): Promise<void> {
     minDelay?: string;
     maxDelay?: string;
     delayJitter?: string;
+    promoteDelay?: string;
     timeoutMs?: string;
   }>();
 
@@ -196,6 +205,7 @@ async function main(): Promise<void> {
   const minDelay = parseNumberOption("--min-delay", opts.minDelay, DEFAULT_MIN_DELAY);
   const maxDelay = parseNumberOption("--max-delay", opts.maxDelay, DEFAULT_MAX_DELAY);
   const delayJitter = parseNumberOption("--delay-jitter", opts.delayJitter, DEFAULT_DELAY_JITTER);
+  const promoteDelay = parseNumberOption("--promote-delay", opts.promoteDelay, DEFAULT_PROMOTE_DELAY);
   const timeoutMs = parseNumberOption("--timeout-ms", opts.timeoutMs, DEFAULT_CALL_TIMEOUT_MS);
 
   if (maxDelay < minDelay) {
@@ -233,11 +243,20 @@ async function main(): Promise<void> {
 
   let totalAdminGroups = 0;
   let skippedNotAdmin = 0;
+  let skippedCommunity = 0;
   let alreadyAdmin = 0;
   let added = 0;
   let promoted = 0;
   let addFailed = 0;
   let promoteFailed = 0;
+  const skippedGroups: Array<{ groupJid: string; groupName: string; reason: string }> = [];
+  const failedActions: Array<{
+    groupJid: string;
+    groupName: string;
+    action: "add" | "promote";
+    status: number | null;
+    error: string | null;
+  }> = [];
 
   for (const g of groups) {
     const meta = await ensureGroupMetadata(sock, g, timeoutMs);
@@ -247,6 +266,7 @@ async function main(): Promise<void> {
     const selfIsAdmin = isParticipantAdmin(meta, selfId ?? null, { altId: selfAlt ?? null });
     if (!selfIsAdmin) {
       skippedNotAdmin++;
+      skippedGroups.push({ groupJid, groupName, reason: "not_admin" });
       continue;
     }
 
@@ -257,6 +277,15 @@ async function main(): Promise<void> {
     if (participant && isAdminRole(participantRole)) {
       alreadyAdmin++;
       console.log(`✔ Já é admin: ${groupName} (${groupJid})`);
+      skippedGroups.push({ groupJid, groupName, reason: "already_admin" });
+      continue;
+    }
+
+    const isCommunity = Boolean(meta.isCommunity || meta.isCommunityAnnounce);
+    if (isCommunity && !participant) {
+      skippedCommunity++;
+      console.log(`⛔ Comunidade detectada; pulando add: ${groupName} (${groupJid})`);
+      skippedGroups.push({ groupJid, groupName, reason: "community_no_participant" });
       continue;
     }
 
@@ -270,6 +299,13 @@ async function main(): Promise<void> {
         promoted++;
       } else {
         promoteFailed++;
+        failedActions.push({
+          groupJid,
+          groupName,
+          action: "promote",
+          status: promoteAttempt.status ?? null,
+          error: promoteAttempt.error ?? null,
+        });
         console.warn(`⚠️ Falha ao promover em ${groupName}: ${promoteAttempt.error ?? "status desconhecido"}`);
       }
     } else {
@@ -279,25 +315,48 @@ async function main(): Promise<void> {
 
       if (addAttempt.status === 409) {
         console.log(`ℹ️ Já estava no grupo. Promovendo em ${groupName} (${groupJid})`);
+        await delayBeforePromote(promoteDelay);
         const promoteAttempt = await tryParticipantsUpdate(sock, groupJid, targetJid, "promote", timeoutMs);
         if (promoteAttempt.ok) {
           promoted++;
         } else {
           promoteFailed++;
+          failedActions.push({
+            groupJid,
+            groupName,
+            action: "promote",
+            status: promoteAttempt.status ?? null,
+            error: promoteAttempt.error ?? null,
+          });
           console.warn(`⚠️ Falha ao promover em ${groupName}: ${promoteAttempt.error ?? "status desconhecido"}`);
         }
       } else if (addAttempt.ok) {
         added++;
         console.log(`🔼 Promovendo para admin em ${groupName} (${groupJid})`);
+        await delayBeforePromote(promoteDelay);
         const promoteAttempt = await tryParticipantsUpdate(sock, groupJid, targetJid, "promote", timeoutMs);
         if (promoteAttempt.ok) {
           promoted++;
         } else {
           promoteFailed++;
+          failedActions.push({
+            groupJid,
+            groupName,
+            action: "promote",
+            status: promoteAttempt.status ?? null,
+            error: promoteAttempt.error ?? null,
+          });
           console.warn(`⚠️ Falha ao promover em ${groupName}: ${promoteAttempt.error ?? "status desconhecido"}`);
         }
       } else {
         addFailed++;
+        failedActions.push({
+          groupJid,
+          groupName,
+          action: "add",
+          status: addAttempt.status ?? null,
+          error: addAttempt.error ?? null,
+        });
         console.warn(`⚠️ Falha ao adicionar em ${groupName}: ${addAttempt.error ?? "status desconhecido"}`);
       }
     }
@@ -310,6 +369,7 @@ async function main(): Promise<void> {
   console.log("\nResumo:");
   console.log(`- Grupos/comunidades onde sou admin: ${totalAdminGroups}`);
   console.log(`- Ignorados (não sou admin): ${skippedNotAdmin}`);
+  console.log(`- Ignorados (comunidade): ${skippedCommunity}`);
   console.log(`- Já era admin: ${alreadyAdmin}`);
   console.log(`- Adicionado: ${added}`);
   console.log(`- Promovido: ${promoted}`);
@@ -323,17 +383,20 @@ async function main(): Promise<void> {
     JSON.stringify(
       {
         target: targetJid,
-        delay: { min: minDelay, max: maxDelay, jitter: delayJitter },
+        delay: { min: minDelay, max: maxDelay, jitter: delayJitter, promoteDelay },
         timeoutMs,
         summary: {
           totalAdminGroups,
           skippedNotAdmin,
+          skippedCommunity,
           alreadyAdmin,
           added,
           promoted,
           addFailed,
           promoteFailed,
         },
+        skippedGroups,
+        failedActions,
       },
       null,
       2,
