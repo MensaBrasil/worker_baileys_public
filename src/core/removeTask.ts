@@ -134,12 +134,22 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
     ),
   );
 
+  const shouldSkipCommunity = (reason: string): boolean =>
+    reason.includes("Bot não faz parte da comunidade") || reason.includes("Bot não é admin da comunidade");
+
+  let communityIdToUse: string | undefined = communityId || undefined;
+
   if (communityId) {
     const communityAccess = await checkSelfAccess(sock, communityId, "comunidade");
     if (!communityAccess.ok) {
-      console.log(ansi.yellow(`${communityAccess.reason} Reenviando para a fila.`));
-      await requeueRemoveQueue(item);
-      return false;
+      if (shouldSkipCommunity(communityAccess.reason)) {
+        console.log(ansi.yellow(`${communityAccess.reason} Prosseguindo remoção apenas no grupo.`));
+        communityIdToUse = undefined;
+      } else {
+        console.log(ansi.yellow(`${communityAccess.reason} Reenviando para a fila.`));
+        await requeueRemoveQueue(item);
+        return false;
+      }
     }
   }
 
@@ -150,7 +160,7 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
     return false;
   }
 
-  const result = await removeMemberFromGroup(sock, phone, groupId, communityId || undefined);
+  const result = await removeMemberFromGroup(sock, phone, groupId, communityIdToUse);
 
   if (result.removed && result.removalType === "Community") {
     console.log(
