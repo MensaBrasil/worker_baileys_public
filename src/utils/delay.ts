@@ -27,6 +27,7 @@ export async function delaySecs(minSeconds: number, maxSeconds: number, jitterSe
   const deadline = Date.now() + totalMs;
 
   let skipped = false;
+  let aborted = false;
   let timer: NodeJS.Timeout | null = null;
   const tick = () => {
     const remainingMs = Math.max(0, deadline - Date.now());
@@ -55,6 +56,7 @@ export async function delaySecs(minSeconds: number, maxSeconds: number, jitterSe
         skipped = true;
         res();
       } else if (buf.length && buf[0] === 3) {
+        aborted = true;
         res();
       }
     };
@@ -84,6 +86,11 @@ export async function delaySecs(minSeconds: number, maxSeconds: number, jitterSe
   cleanupKeypress();
   clearInterval(interval);
   if (timer) clearTimeout(timer);
+
+  if (aborted) {
+    process.stdout.write("\rInterrompido (Ctrl+C).          \n");
+    process.exit(130);
+  }
 
   if (skipped) {
     process.stdout.write("\rDelay skipped                     \n");

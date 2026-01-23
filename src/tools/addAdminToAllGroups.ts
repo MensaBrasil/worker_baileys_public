@@ -46,6 +46,8 @@ const DEFAULT_MAX_DELAY = parseEnvNumber("MAX_DELAY", 6);
 const DEFAULT_DELAY_JITTER = parseEnvNumber("DELAY_JITTER", 1);
 const DEFAULT_CALL_TIMEOUT_MS = parseEnvNumber("CALL_TIMEOUT_MS", 15_000);
 const DEFAULT_PROMOTE_DELAY = parseEnvNumber("PROMOTE_DELAY_SECONDS", 2);
+const DEFAULT_RECONNECT_RETRIES = parseEnvNumber("RECONNECT_RETRIES", 2);
+const DEFAULT_RECONNECT_DELAY = parseEnvNumber("RECONNECT_DELAY_SECONDS", 3);
 
 function parseNumberOption(label: string, value: string | undefined, fallback: number): number {
   if (value == null || value === "") return fallback;
@@ -81,6 +83,11 @@ function asStatusCode(status: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+function isConnectionClosedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Connection Closed|Connection closed|closed/i.test(msg);
 }
 
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -151,7 +158,7 @@ async function tryParticipantsUpdate(
   userJid: string,
   action: "add" | "remove" | "demote" | "promote",
   timeoutMs: number,
-): Promise<{ ok: boolean; status: number | null; error?: string }> {
+): Promise<{ ok: boolean; status: number | null; error?: string; connectionClosed?: boolean }> {
   try {
     const resp = await withTimeout(sock.groupParticipantsUpdate(groupJid, [userJid], action), timeoutMs);
     if (Array.isArray(resp) && resp.length > 0) {
@@ -162,7 +169,7 @@ async function tryParticipantsUpdate(
     return { ok: true, status: null };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, status: null, error: msg };
+    return { ok: false, status: null, error: msg, connectionClosed: isConnectionClosedError(err) };
   }
 }
 
@@ -183,6 +190,8 @@ async function main(): Promise<void> {
     .option("--max-delay <seconds>", "Delay máximo entre operações (segundos)")
     .option("--delay-jitter <seconds>", "Jitter adicional para o delay (segundos)")
     .option("--promote-delay <seconds>", "Delay entre adicionar e promover (segundos)")
+    .option("--reconnect-retries <count>", "Tentativas de reconnect quando a conexão fecha")
+    .option("--reconnect-delay <seconds>", "Delay entre tentativas de reconnect (segundos)")
     .option("--timeout-ms <ms>", "Timeout por chamada Baileys (ms)")
     .parse(process.argv);
 
@@ -192,6 +201,8 @@ async function main(): Promise<void> {
     maxDelay?: string;
     delayJitter?: string;
     promoteDelay?: string;
+    reconnectRetries?: string;
+    reconnectDelay?: string;
     timeoutMs?: string;
   }>();
 
@@ -206,6 +217,8 @@ async function main(): Promise<void> {
   const maxDelay = parseNumberOption("--max-delay", opts.maxDelay, DEFAULT_MAX_DELAY);
   const delayJitter = parseNumberOption("--delay-jitter", opts.delayJitter, DEFAULT_DELAY_JITTER);
   const promoteDelay = parseNumberOption("--promote-delay", opts.promoteDelay, DEFAULT_PROMOTE_DELAY);
+  const reconnectRetries = parseNumberOption("--reconnect-retries", opts.reconnectRetries, DEFAULT_RECONNECT_RETRIES);
+  const reconnectDelay = parseNumberOption("--reconnect-delay", opts.reconnectDelay, DEFAULT_RECONNECT_DELAY);
   const timeoutMs = parseNumberOption("--timeout-ms", opts.timeoutMs, DEFAULT_CALL_TIMEOUT_MS);
 
   if (maxDelay < minDelay) {
@@ -215,15 +228,30 @@ async function main(): Promise<void> {
 
   const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), "default");
   const { version } = await fetchLatestBaileysVersion();
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    browser: Browsers.ubuntu("Desktop"),
-    printQRInTerminal: false,
-    markOnlineOnConnect: false,
-    syncFullHistory: false,
-  });
-  sock.ev.on("creds.update", saveCreds);
+
+  let lastDisconnectCode: number | undefined;
+
+  const onConnectionUpdate = (u: Partial<ConnectionState>) => {
+    const code = (u.lastDisconnect?.error as BoomError | undefined)?.output?.statusCode as number | undefined;
+    if (code != null) lastDisconnectCode = code;
+  };
+
+  const makeSocket = (): WASocket => {
+    lastDisconnectCode = undefined;
+    const newSock = makeWASocket({
+      version,
+      auth: state,
+      browser: Browsers.ubuntu("Desktop"),
+      printQRInTerminal: false,
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+    });
+    newSock.ev.on("creds.update", saveCreds);
+    newSock.ev.on("connection.update", onConnectionUpdate);
+    return newSock;
+  };
+
+  let sock = makeSocket();
 
   await waitForOpen(sock);
 
@@ -231,6 +259,36 @@ async function main(): Promise<void> {
   if (!selfId && !selfAlt) {
     throw new Error("Identidade do cliente indisponível.");
   }
+
+  const reconnect = async (): Promise<void> => {
+    if (lastDisconnectCode === DisconnectReason.loggedOut) {
+      throw new Error("Session logged out. Re-link the device (auth DB).");
+    }
+    sock = makeSocket();
+    await waitForOpen(sock);
+  };
+
+  const performUpdateWithReconnect = async (
+    action: "add" | "promote",
+    groupJid: string,
+    groupName: string,
+  ): Promise<{ ok: boolean; status: number | null; error?: string; connectionClosed?: boolean }> => {
+    let lastResult: { ok: boolean; status: number | null; error?: string; connectionClosed?: boolean } | null = null;
+    const retries = Math.max(0, Math.floor(reconnectRetries));
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const res = await tryParticipantsUpdate(sock, groupJid, targetJid, action, timeoutMs);
+      lastResult = res;
+      if (res.ok || !res.connectionClosed) return res;
+      const humanAttempt = attempt + 1;
+      if (humanAttempt > retries) break;
+      console.warn(
+        `⚠️ Conexão fechada durante ${action} em ${groupName}. Tentando reconectar (${humanAttempt}/${retries})...`,
+      );
+      await delayBeforePromote(reconnectDelay);
+      await reconnect();
+    }
+    return lastResult ?? { ok: false, status: null, error: "Connection Closed", connectionClosed: true };
+  };
 
   console.log("✅ Connected. Fetching groups...");
   const groupsRecord = await sock.groupFetchAllParticipating();
@@ -293,7 +351,7 @@ async function main(): Promise<void> {
 
     if (participant) {
       console.log(`🔼 Promovendo para admin em ${groupName} (${groupJid})`);
-      const promoteAttempt = await tryParticipantsUpdate(sock, groupJid, targetJid, "promote", timeoutMs);
+      const promoteAttempt = await performUpdateWithReconnect("promote", groupJid, groupName);
       didAction = true;
       if (promoteAttempt.ok) {
         promoted++;
@@ -310,13 +368,13 @@ async function main(): Promise<void> {
       }
     } else {
       console.log(`➕ Adicionando em ${groupName} (${groupJid})`);
-      const addAttempt = await tryParticipantsUpdate(sock, groupJid, targetJid, "add", timeoutMs);
+      const addAttempt = await performUpdateWithReconnect("add", groupJid, groupName);
       didAction = true;
 
       if (addAttempt.status === 409) {
         console.log(`ℹ️ Já estava no grupo. Promovendo em ${groupName} (${groupJid})`);
         await delayBeforePromote(promoteDelay);
-        const promoteAttempt = await tryParticipantsUpdate(sock, groupJid, targetJid, "promote", timeoutMs);
+        const promoteAttempt = await performUpdateWithReconnect("promote", groupJid, groupName);
         if (promoteAttempt.ok) {
           promoted++;
         } else {
@@ -334,7 +392,7 @@ async function main(): Promise<void> {
         added++;
         console.log(`🔼 Promovendo para admin em ${groupName} (${groupJid})`);
         await delayBeforePromote(promoteDelay);
-        const promoteAttempt = await tryParticipantsUpdate(sock, groupJid, targetJid, "promote", timeoutMs);
+        const promoteAttempt = await performUpdateWithReconnect("promote", groupJid, groupName);
         if (promoteAttempt.ok) {
           promoted++;
         } else {
@@ -384,6 +442,7 @@ async function main(): Promise<void> {
       {
         target: targetJid,
         delay: { min: minDelay, max: maxDelay, jitter: delayJitter, promoteDelay },
+        reconnect: { retries: reconnectRetries, delaySeconds: reconnectDelay },
         timeoutMs,
         summary: {
           totalAdminGroups,
