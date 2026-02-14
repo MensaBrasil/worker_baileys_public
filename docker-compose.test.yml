@@ -1,10 +1,12 @@
 # Local test infrastructure for the First Contact Welcome flow.
 #
-# Usage:
-#   docker compose -f docker-compose.test.yml up -d
-#   cp .env.test .env          # then edit FIRST_CONTACT_GROUP_NAME if needed
-#   pnpm prisma migrate deploy # create auth tables
-#   pnpm start --auth          # minimal mode — only welcome + auth listeners
+# Infrastructure only (Postgres + Redis):
+#   docker compose -f docker-compose.test.yml up -d postgres redis
+#
+# Fully containerized (includes the bot):
+#   ./scripts/live-test.sh --docker
+#   — or manually —
+#   docker compose -f docker-compose.test.yml run --rm bot
 #
 # Tear down:
 #   docker compose -f docker-compose.test.yml down -v
@@ -35,6 +37,31 @@ services:
       interval: 3s
       timeout: 3s
       retries: 10
+
+  bot:
+    image: node:22-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    env_file: .env
+    environment:
+      # Override hosts: inside compose, services are reached by name, not localhost
+      PG_DB_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql://test:test@postgres:5432/worker_test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Interactive TTY for QR code display
+    stdin_open: true
+    tty: true
+    # Enable pnpm via corepack, then run command
+    entrypoint: ["sh", "-c", "corepack enable && corepack prepare pnpm@10 --activate && exec \"$$@\"", "--"]
+    command: ["pnpm", "start"]
+    profiles:
+      - bot
 
 volumes:
   pgdata:
