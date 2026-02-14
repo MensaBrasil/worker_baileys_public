@@ -11,7 +11,7 @@ type AuthStateResult = {
 };
 
 export const usePostgresAuthState = async (pool: Pool, sessionId: string): Promise<AuthStateResult> => {
-  const encode = (obj: unknown) => JSON.parse(JSON.stringify(obj, BufferJSON.replacer));
+  const encode = (obj: unknown): string => JSON.stringify(obj, BufferJSON.replacer);
   const decode = (obj: unknown) => JSON.parse(JSON.stringify(obj), BufferJSON.reviver);
 
   const readCreds = async (): Promise<AuthenticationCreds> => {
