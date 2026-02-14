@@ -18,7 +18,8 @@
     "getJBAdmins": "node dist/tools/checkJBAdmins.js",
     "reportUnderageGroups": "node dist/tools/reportUnderageGroups.js",
     "addAdminToAllGroups": "node dist/tools/addAdminToAllGroups.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "license": "ISC",
@@ -56,6 +57,7 @@
     "prettier": "^3.7.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.52.0"
+    "typescript-eslint": "^8.52.0",
+    "vitest": "^4.0.18"
   }
 }
