@@ -34,9 +34,13 @@ type PendingAudioRequest = {
 
 const pendingAudioRequests = new Map<string, Map<string, PendingAudioRequest>>();
 
-function normalizeParticipantId(participant: GroupParticipant | string | undefined | null): string | null {
+/** @internal Exported for testing */
+export function normalizeParticipantId(participant: GroupParticipant | string | undefined | null): string | null {
   if (!participant) return null;
   if (typeof participant === "string") return participant;
+  // Prefer phoneNumber (PN format) when available, since id may be LID format
+  const phoneNumber = (participant as { phoneNumber?: unknown }).phoneNumber;
+  if (typeof phoneNumber === "string" && phoneNumber) return phoneNumber;
   const id = (participant as { id?: unknown }).id;
   if (typeof id === "string") return id;
   const jid = (participant as { jid?: unknown }).jid;
@@ -48,7 +52,21 @@ function normalizeParticipantId(participant: GroupParticipant | string | undefin
   return null;
 }
 
-function participantTag(participantId: string | null): string {
+/**
+ * Extracts the numeric portion of a JID for use as a stable map key.
+ * Works for both PN ("5511999@s.whatsapp.net") and LID ("123:0@lid") formats.
+ * This ensures audio request lookups match regardless of JID format.
+ */
+/** @internal Exported for testing */
+export function jidToDigitsKey(jid: string): string {
+  const beforeAt = jid.split("@")[0] ?? jid;
+  const beforeColon = beforeAt.split(":")[0] ?? beforeAt;
+  const digits = beforeColon.replace(/\D/g, "");
+  return digits || jid;
+}
+
+/** @internal Exported for testing */
+export function participantTag(participantId: string | null): string {
   if (!participantId) return "";
   const base = participantId.split("@")[0] ?? participantId;
   return base;
@@ -228,19 +246,40 @@ export function registerFirstContactWelcome(sock: WASocket): void {
             "⟬🤤⟭▸ O que é bom mas é ruim? E algo que é ruim, mas é bom?",
           ].join("\n");
 
-          await sock.sendMessage(update.id, {
-            text: welcomeText,
-            mentions: [member],
-          });
+          try {
+            await sock.sendMessage(update.id, {
+              text: welcomeText,
+              mentions: [member],
+            });
+            logger.info(
+              { groupId: update.id, participant: participantTag(member) },
+              "Mensagem de boas-vindas (texto) enviada.",
+            );
+          } catch (err) {
+            logger.error(
+              { err, groupId: update.id, participant: participantTag(member) },
+              "Falha ao enviar mensagem de boas-vindas (texto).",
+            );
+          }
 
-          await sock.sendMessage(update.id, {
-            text: formText,
-          });
+          try {
+            await sock.sendMessage(update.id, {
+              text: formText,
+            });
+            logger.info(
+              { groupId: update.id, participant: participantTag(member) },
+              "Mensagem de boas-vindas (formulário) enviada.",
+            );
+          } catch (err) {
+            logger.error(
+              { err, groupId: update.id, participant: participantTag(member) },
+              "Falha ao enviar mensagem de boas-vindas (formulário).",
+            );
+          }
 
-          logger.info({ groupId: update.id, participant: participantTag(member) }, "Mensagem de boas-vindas enviada.");
-
+          const memberKey = jidToDigitsKey(member);
           const groupRequests = pendingAudioRequests.get(update.id) ?? new Map<string, PendingAudioRequest>();
-          const existingRequest = groupRequests.get(member);
+          const existingRequest = groupRequests.get(memberKey);
           if (existingRequest) {
             clearTimeout(existingRequest.timeoutId);
           }
@@ -251,20 +290,20 @@ export function registerFirstContactWelcome(sock: WASocket): void {
               return;
             }
 
-            requestsForGroup.delete(member);
+            requestsForGroup.delete(memberKey);
             if (!requestsForGroup.size) {
               pendingAudioRequests.delete(update.id);
             }
           }, AUDIO_REQUEST_WINDOW_MS);
 
-          groupRequests.set(member, {
+          groupRequests.set(memberKey, {
             expiresAt: Date.now() + AUDIO_REQUEST_WINDOW_MS,
             timeoutId,
           });
           pendingAudioRequests.set(update.id, groupRequests);
 
           logger.info(
-            { groupId: update.id, participant: participantTag(member), expiresInMs: AUDIO_REQUEST_WINDOW_MS },
+            { groupId: update.id, participant: participantTag(member), memberKey, expiresInMs: AUDIO_REQUEST_WINDOW_MS },
             "Janela para áudio de boas-vindas iniciada.",
           );
         }
@@ -308,14 +347,19 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         }
 
         const participantJid = String(participantJidRaw);
-        const request = requestsForGroup.get(participantJid);
+        const participantKey = jidToDigitsKey(participantJid);
+        const request = requestsForGroup.get(participantKey);
         if (!request) {
+          logger.debug(
+            { groupId: remoteJid, participantJid, participantKey, pendingKeys: [...requestsForGroup.keys()] },
+            "Áudio: participante não encontrado no mapa de pendentes.",
+          );
           continue;
         }
 
         if (Date.now() > request.expiresAt) {
           clearTimeout(request.timeoutId);
-          requestsForGroup.delete(participantJid);
+          requestsForGroup.delete(participantKey);
           if (!requestsForGroup.size) {
             pendingAudioRequests.delete(remoteJid);
           }
@@ -353,7 +397,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         }
 
         clearTimeout(request.timeoutId);
-        requestsForGroup.delete(participantJid);
+        requestsForGroup.delete(participantKey);
         if (!requestsForGroup.size) {
           pendingAudioRequests.delete(remoteJid);
         }
