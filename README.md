@@ -1,66 +1,66 @@
 # worker_baileys (newzelador)
 
-Worker de WhatsApp baseado em [Baileys](https://github.com/WhiskeySockets/Baileys), escrito em TypeScript.
+A WhatsApp worker built on [Baileys](https://github.com/WhiskeySockets/Baileys), written in TypeScript.
 
-Este servico processa filas no Redis para:
+This service processes Redis queues to:
 
-- adicionar membros em grupos/comunidades
-- remover membros
-- moderar mensagens com links (e opcionalmente com OpenAI)
-- manter autorizacoes por telefone
-- persistir mensagens e estado de autenticacao no PostgreSQL
+- add members to groups/communities
+- remove members
+- moderate messages containing links, and optionally moderate content with OpenAI
+- maintain phone-based authorizations
+- persist messages and authentication state in PostgreSQL
 
-## Arquitetura
+## Architecture
 
-O projeto usa dois acessos a banco:
+The project uses two database connections:
 
-- **Banco operacional (`PG_DB_*`)**: tabelas de negocio (workers, autorizacoes, pedidos de add/remove, etc).
-- **Banco Prisma/Auth (`DATABASE_URL`)**: tabelas de mensagens e auth state do Baileys (`WaAuthCreds`, `WaAuthKey`, etc).
+- **Operational database (`PG_DB_*`)**: business tables such as workers, authorizations, add/remove requests, and related data.
+- **Prisma/Auth database (`DATABASE_URL`)**: message tables and Baileys auth state tables (`WaAuthCreds`, `WaAuthKey`, etc).
 
-Tambem usa:
+It also uses:
 
-- **Redis** para filas `addQueue` e `removeQueue`
-- **Telegram Bot API** para alertas de falha e logs de moderacao
+- **Redis** for the `addQueue` and `removeQueue` queues
+- **Telegram Bot API** for failure alerts and moderation logs
 
-## Requisitos
+## Requirements
 
 - Node.js 20+ (recomendado)
 - pnpm 10+
 - Redis 6+
 - PostgreSQL 14+
-- Conta WhatsApp para conectar via QR ou pairing code
+- A WhatsApp account to connect via QR code or pairing code
 
-## Setup rapido
+## Quick Setup
 
-1. Instale dependencias:
+1. Install dependencies:
 
 ```bash
 pnpm install
 ```
 
-2. Crie o arquivo de ambiente:
+2. Create the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Preencha as variaveis no `.env`.
+3. Fill in the variables in `.env`.
 
-4. Aplique as migrations do Prisma no banco de `DATABASE_URL`:
+4. Apply Prisma migrations to the `DATABASE_URL` database:
 
 ```bash
 pnpm prisma migrate deploy
 ```
 
-5. Build e execucao:
+5. Build and run:
 
 ```bash
 pnpm start
 ```
 
-## Modos de execucao
+## Execution Modes
 
-O worker aceita flags:
+The worker accepts these flags:
 
 - `--add`
 - `--remove`
@@ -68,41 +68,41 @@ O worker aceita flags:
 - `--auth`
 - `--pairing`
 
-Comportamento:
+Behavior:
 
-- Sem flags de modo (`--add|--remove|--moderation|--auth`), roda em modo completo: `add + remove + moderation + auth`.
-- `--pairing` apenas habilita geracao de pairing code; combine com os modos desejados.
+- Without mode flags (`--add|--remove|--moderation|--auth`), it runs in full mode: `add + remove + moderation + auth`.
+- `--pairing` only enables pairing code generation; combine it with the modes you want.
 
-Exemplos:
+Examples:
 
 ```bash
-# modo completo (default)
+# full mode (default)
 pnpm start
 
-# somente add + auth
+# add + auth only
 pnpm start -- --add --auth
 
-# somente remove + auth
+# remove + auth only
 pnpm start -- --remove --auth
 
-# somente moderation + auth
+# moderation + auth only
 pnpm start -- --moderation --auth
 
-# auth com pairing code (requer PAIRING_PHONE)
+# auth with pairing code (requires PAIRING_PHONE)
 pnpm start -- --auth --pairing
 ```
 
-Tambem existe um helper interativo:
+There is also an interactive helper:
 
 ```bash
 ./run-interactive.sh
 ```
 
-## Variaveis de ambiente
+## Environment Variables
 
-Baseado em `.env.example`:
+Based on `.env.example`:
 
-### Banco operacional (`PG_DB_*`)
+### Operational Database (`PG_DB_*`)
 
 - `PG_DB_HOST`
 - `PG_DB_PORT`
@@ -110,47 +110,54 @@ Baseado em `.env.example`:
 - `PG_DB_USER`
 - `PG_DB_PASSWORD`
 
-### Banco Prisma/Auth (`DATABASE_URL`)
+### Prisma/Auth Database (`DATABASE_URL`)
 
-- `DATABASE_URL` (obrigatoria)
+- `DATABASE_URL` (required)
 
 ### Redis
 
 - `REDIS_HOST`
-- `REDIS_PORT` (padrao `6379` se ausente)
-- `REDIS_PASSWORD` (opcional, depende da infra)
+- `REDIS_PORT` (defaults to `6379` if omitted)
+- `REDIS_PASSWORD` (optional, depends on your infrastructure)
 
-### Fluxo de execucao
+### Execution Flow
 
-- `MIN_DELAY` (obrigatoria)
-- `MAX_DELAY` (obrigatoria)
-- `DELAY_JITTER` (opcional, padrao `0`)
-- `CALL_TIMEOUT_MS` (opcional, padrao `15000`)
+- `MIN_DELAY` (required)
+- `MAX_DELAY` (required)
+- `DELAY_JITTER` (optional, default `0`)
+- `CALL_TIMEOUT_MS` (optional, default `15000`)
 
-### Logs e observabilidade
+### Logging and Observability
 
 - `LOG_LEVEL` (`trace|debug|info|warn|error|fatal`)
-- `NODE_ENV` (`production` gera logs JSON)
-- `UPTIME_URL` (opcional; recebe ping periodico)
+- `BAILEYS_LOG_LEVEL` (optional; Baileys internal log level, default `fatal`)
+- `NODE_ENV` (`production` enables JSON logs)
+- `UPTIME_URL` (optional; receives a periodic ping)
 
 ### Telegram
 
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_FAILURES_CHAT_ID`
-- `TELEGRAM_MODERATIONS_CHAT_ID`
+- `TELEGRAM_BOT_TOKEN` (optional; required to send notifications)
+- `TELEGRAM_FAILURES_CHAT_ID` (optional; used for add/remove failure alerts)
+- `TELEGRAM_MODERATIONS_CHAT_ID` (optional; used for moderation logs)
 
-### Moderacao
+### Moderation
 
 - `ENABLE_LINK_MODERATION` (`true|false`)
 - `ENABLE_CONTENT_MODERATION` (`true|false`)
-- `OPENAI_API_KEY` (necessaria se `ENABLE_CONTENT_MODERATION=true`)
+- `OPENAI_API_KEY` (required if `ENABLE_CONTENT_MODERATION=true`)
 
-### Primeiro contato e pairing
+### First Contact and Pairing
 
-- `FIRST_CONTACT_GROUP_NAME` (nome exato do grupo para mensagem de boas-vindas e audio)
-- `PAIRING_PHONE` (obrigatoria para `--pairing`, formato so digitos, ex: `5511999999999`)
+- `FIRST_CONTACT_GROUP_NAME` (optional; exact group name that receives the first-contact message and audio)
+- `PAIRING_PHONE` (required for `--pairing`, digits only, e.g. `5511999999999`)
 
-## Filas Redis esperadas
+### Helper Tools
+
+- `PROMOTE_DELAY_SECONDS` (optional; default `2`, used by `addAdminToAllGroups`)
+- `RECONNECT_RETRIES` (optional; default `2`, used by `addAdminToAllGroups`)
+- `RECONNECT_DELAY_SECONDS` (optional; default `3`, used by `addAdminToAllGroups`)
+
+## Expected Redis Queues
 
 ### `addQueue`
 
@@ -159,7 +166,7 @@ Baseado em `.env.example`:
   "type": "string",
   "request_id": 123,
   "registration_id": "456",
-  "group_id": "551199999999-123456@g.us ou sem sufixo",
+  "group_id": "551199999999-123456@g.us or without suffix",
   "group_type": "MB|JB|RJB|..."
 }
 ```
@@ -170,16 +177,16 @@ Baseado em `.env.example`:
 {
   "type": "string",
   "registration_id": "456",
-  "groupId": "id do grupo",
+  "groupId": "group id",
   "phone": "5511999999999",
-  "reason": "motivo da remocao",
-  "communityId": "id da comunidade ou null"
+  "reason": "removal reason",
+  "communityId": "community id or null"
 }
 ```
 
-## Tabelas esperadas
+## Expected Tables
 
-### Criadas por migration Prisma (DATABASE_URL)
+### Created by Prisma migration (`DATABASE_URL`)
 
 - `account`
 - `contact`
@@ -189,9 +196,9 @@ Baseado em `.env.example`:
 - `WaAuthCreds`
 - `WaAuthKey`
 
-### Esperadas no banco operacional (PG*DB*\*)
+### Expected in the operational database (`PG_DB_*`)
 
-Estas tabelas sao lidas/escritas pelo codigo e **nao** sao criadas pelas migrations deste repo:
+These tables are read and written by the code and are **not** created by this repository's migrations:
 
 - `whatsapp_workers`
 - `whatsapp_authorization`
@@ -203,9 +210,9 @@ Estas tabelas sao lidas/escritas pelo codigo e **nao** sao criadas pelas migrati
 - `whatsapp_moderation`
 - `whatsapp_lid_mappings`
 
-## Scripts uteis
+## Useful Scripts
 
-### Build, check e qualidade
+### Build, Check, and Quality
 
 - `pnpm build`
 - `pnpm check`
@@ -214,12 +221,12 @@ Estas tabelas sao lidas/escritas pelo codigo e **nao** sao criadas pelas migrati
 - `pnpm fmt`
 - `pnpm fmt:write`
 
-### Execucao
+### Execution
 
 - `pnpm start` (build + run)
-- `pnpm run-prod` (roda `dist/index.js`)
+- `pnpm run-prod` (runs `dist/index.js`)
 
-### Ferramentas operacionais (geram arquivos em `tools_results/`)
+### Operational Tools (generate files in `tools_results/`)
 
 - `pnpm get-queues -- --add|--remove|--all`
 - `pnpm getAdmins -- --ids 123,456`
@@ -227,15 +234,15 @@ Estas tabelas sao lidas/escritas pelo codigo e **nao** sao criadas pelas migrati
 - `pnpm reportUnderageGroups`
 - `pnpm addAdminToAllGroups -- --jid 5511999999999@s.whatsapp.net`
 
-## Comportamentos importantes
+## Important Behaviors
 
-- Sessao do WhatsApp e chaves do Signal ficam no Postgres (`WaAuthCreds` e `WaAuthKey`).
-- Em logout (`DisconnectReason.loggedOut`), o processo encerra; e necessario relinkar.
-- Existe regra especial de boas-vindas para grupo com nome `Mensampa Regional`.
-- O audio de boas-vindas usa o arquivo local `primeiro_contato.mp3`.
+- The WhatsApp session and Signal keys are stored in Postgres (`WaAuthCreds` and `WaAuthKey`).
+- On logout (`DisconnectReason.loggedOut`), the process exits and the device must be linked again.
+- There is a special welcome rule for a group named `Mensampa Regional`.
+- The welcome audio uses the local file `primeiro_contato.mp3`.
 
-## Contribuições
+## Contributions
 
-### Fix possível erro de serialização no auth state
+### Fix for a Possible Auth State Serialization Error
 
 - Renato Cunha - MB 6456
