@@ -24,6 +24,7 @@ const communityKeywordRegex = /(commun\w*|group\w*)/i;
 const urlLikeRegex = /(?:https?:\/\/|www\.)[^\s]+|(?:[a-z0-9][\w-]*\.)+[a-z0-9-]{2,}(?:\/[^\s]*)?/gi;
 const whitelistedCommunityDomains = ["mensa.org", "mensa.org.br"];
 const bannedCommunityId = "1968352772362780861";
+const linkModerationExemptGroups = new Set(["MB | Divulgação (serviços, trocas, vendas)"]);
 
 function normalizeMockedUrlText(text: string): string {
   return text
@@ -151,6 +152,11 @@ function contentText(m: proto.IMessage | null | undefined): string {
   return "";
 }
 
+function isLinkModerationExemptGroup(meta: GroupMetadata | null): boolean {
+  const subject = meta?.subject?.trim();
+  return Boolean(subject && linkModerationExemptGroups.has(subject));
+}
+
 async function getGroupMetadata(sock: WASocket, jid: string): Promise<GroupMetadata | null> {
   try {
     const meta = await sock.groupMetadata(jid);
@@ -248,8 +254,9 @@ export async function handleMessageModeration(
     hasWaMeLink ||
     hasCommunityLink ||
     hasBannedCommunityId;
+  const shouldSkipLinkModeration = isLinkModerationExemptGroup(meta);
 
-  if (enableLinkModeration && hasModeratableLink && meta) {
+  if (enableLinkModeration && hasModeratableLink && meta && !shouldSkipLinkModeration) {
     const deletion = await deleteMessageIfAllowed(sock, msg, meta);
 
     // Persist moderation only when deletion was attempted (log outcome)
