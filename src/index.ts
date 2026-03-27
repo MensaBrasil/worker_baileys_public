@@ -119,7 +119,7 @@ async function main() {
   const sock = makeWASocket({
     version,
     auth: state,
-    browser: Browsers.ubuntu("Desktop"),
+    browser: Browsers.macOS("Desktop"),
     logger: logger.child({ module: "baileys" }, { level: (process.env.BAILEYS_LOG_LEVEL ?? "fatal") as string }),
     printQRInTerminal: false,
     markOnlineOnConnect: false,

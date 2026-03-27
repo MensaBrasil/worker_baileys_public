@@ -142,3 +142,4 @@ vite.config.ts.timestamp-*
 # app
 auth
 tools_results
+debug
