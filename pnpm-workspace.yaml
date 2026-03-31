@@ -1,5 +1,5 @@
 onlyBuiltDependencies:
-  - '@prisma/engines'
+  - "@prisma/engines"
   - baileys
   - prisma
   - protobufjs

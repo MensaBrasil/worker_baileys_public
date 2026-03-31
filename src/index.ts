@@ -36,6 +36,16 @@ import { prisma } from "./db/prisma";
 
 configDotenv({ path: ".env" });
 
+function parseEnvNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid numeric env var ${name}: "${raw}"`);
+  }
+  return parsed;
+}
+
 let addMode = process.argv.includes("--add");
 let removeMode = process.argv.includes("--remove");
 let moderationMode = process.argv.includes("--moderation");
@@ -65,6 +75,18 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const uptimeUrl = process.env.UPTIME_URL;
+const uptimeIntervalSeconds = parseEnvNumber("UPTIME_INTERVAL_SECONDS", 60);
+const idleLoopDelaySeconds = parseEnvNumber("IDLE_LOOP_DELAY_SECONDS", 30);
+async function pingUptime(url: string): Promise<void> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+  try {
+    await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 let mainLoopStarted = false;
 
@@ -203,31 +225,31 @@ async function main() {
 
       (async function mainLoop() {
         const startTime = Date.now();
+        let lastUptimePingAt = 0;
         let lastRuntimeLogMinutes = -5;
         let runtimeLoggedOnce = false;
         while (shouldRun) {
+          let shouldApplyIdleDelay = !addMode && !removeMode;
+
           try {
             if (addMode) {
               await processAddQueue(sock, worker);
               await delaySecs(7, 13, 3);
             }
-
             if (removeMode) {
               await processRemoveQueue(sock);
               await delaySecs(7, 13, 3);
             }
 
-            if (uptimeUrl) {
+            const now = Date.now();
+            if (uptimeUrl && now - lastUptimePingAt >= uptimeIntervalSeconds * 1000) {
               try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30_000);
-                await fetch(uptimeUrl, { signal: controller.signal });
-                clearTimeout(timeoutId);
+                await pingUptime(uptimeUrl);
+                lastUptimePingAt = now;
               } catch (err) {
                 logger.warn({ err }, "Uptime check failed");
               }
             }
-
             const currentTime = Date.now();
             const elapsed = currentTime - startTime;
             const minutes = Math.floor(elapsed / 60_000);
@@ -238,6 +260,11 @@ async function main() {
             }
           } catch (err) {
             logger.error({ err }, "[mainLoop] error");
+            shouldApplyIdleDelay = true;
+          }
+
+          if (shouldApplyIdleDelay) {
+            await delaySecs(15, idleLoopDelaySeconds);
           }
         }
       })().catch((e) => logger.error({ err: e }, "[mainLoop] fatal"));
