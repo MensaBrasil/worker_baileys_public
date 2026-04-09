@@ -8,11 +8,11 @@ import {
   type ConnectionState,
   type GroupMetadata,
   type WASocket,
+  useMultiFileAuthState,
 } from "baileys";
 import * as fs from "fs";
 import * as path from "path";
-import { usePostgresAuthState } from "../baileys/use-postgres-auth-state";
-import { getAuthPool } from "../db/authStatePg";
+import { getAuthStateDir } from "../baileys/auth-state-dir";
 import type { BoomError } from "../types/errorTypes";
 import { delaySecs } from "../utils/delay";
 import { findParticipant, isParticipantAdmin } from "../utils/waParticipants";
@@ -116,7 +116,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Re-link the device (auth DB)."));
+        reject(new Error("Session logged out. Delete the local auth folder and link again."));
       }
     };
     const cleanup = () => {
@@ -226,7 +226,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), "default");
+  const { state, saveCreds } = await useMultiFileAuthState(getAuthStateDir());
   const { version } = await fetchLatestBaileysVersion();
 
   let lastDisconnectCode: number | undefined;
@@ -262,7 +262,7 @@ async function main(): Promise<void> {
 
   const reconnect = async (): Promise<void> => {
     if (lastDisconnectCode === DisconnectReason.loggedOut) {
-      throw new Error("Session logged out. Re-link the device (auth DB).");
+      throw new Error("Session logged out. Delete the local auth folder and link again.");
     }
     sock = makeSocket();
     await waitForOpen(sock);

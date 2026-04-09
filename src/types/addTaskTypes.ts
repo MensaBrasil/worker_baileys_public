@@ -1,4 +1,4 @@
-export type GroupType = "RJB" | "DEFAULT" | string;
+export type GroupType = "MB" | "RJB" | "NOT_MANAGED" | string;
 
 export interface Worker {
   id: number;
@@ -12,13 +12,11 @@ export interface MemberPhone {
 
 export interface AddAttemptResult {
   added: boolean;
-  isInviteV4Sent: boolean;
   alreadyInGroup: boolean;
 }
 
 export interface AddProcessResult {
   added: boolean;
-  inviteSent: boolean;
   alreadyInGroup: boolean;
   processedPhones: number;
   totalPhones: number;

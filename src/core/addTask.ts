@@ -1,6 +1,5 @@
 import { config as configDotenv } from "dotenv";
 import type { WASocket, GroupMetadata } from "baileys";
-import { proto } from "baileys";
 import { AddAttemptResult, AddProcessResult, MemberPhone, Worker } from "../types/addTaskTypes";
 import type { MemberStatus } from "../types/pgsqlTypes";
 import { AddQueueItem } from "../types/redisTypes";
@@ -32,7 +31,7 @@ function parseEnvNumber(name: string, fallback?: number): number {
   return n;
 }
 
-// Backoff window configuration after a successful add/invite (seconds)
+// Backoff window configuration after a successful add (seconds)
 // Using explicit min/max and an optional jitter
 const MIN_DELAY = parseEnvNumber("MIN_DELAY");
 const MAX_DELAY = parseEnvNumber("MAX_DELAY");
@@ -84,7 +83,8 @@ function dedupePhonesByAuthKey(phones: MemberPhone[], groupType: string): Normal
   const unique = new Map<string, NormalizedMemberPhone>();
 
   for (const phone of phones) {
-    // For RJB groups we only keep legal representatives
+    // MB accepts only member phones; RJB accepts only legal-representative phones.
+    if (groupType === "MB" && phone.is_legal_rep) continue;
     if (groupType === "RJB" && !phone.is_legal_rep) continue;
 
     const normalized = normalizeDigits(phone.phone);
@@ -125,8 +125,8 @@ function isSelfInGroup(sock: WASocket, meta: GroupMetadata): boolean {
  * Reads an item from the queue and processes group inclusion.
  * - Checks if the bot is an admin
  * - Fetches phone numbers associated with the registration
- * - Attempts to add; if it fails due to policy, sends a GroupInviteMessage
- * - Logs the entry/invitation in the database
+ * - Attempts to add; if it fails, logs the status and proceeds to the next number
+ * - Logs successful entries in the database
  */
 export async function processAddQueue(sock: WASocket, worker: Worker): Promise<AddProcessResult> {
   // 1) Get next item
@@ -191,7 +191,6 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
 
   const results: AddProcessResult = {
     added: false,
-    inviteSent: false,
     alreadyInGroup: false,
     processedPhones: 0,
     totalPhones: normalizedPhones.length,
@@ -209,7 +208,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
       continue;
     }
 
-    const attempt = await addMemberToGroup(sock, authorized.phone_number, groupJid, item, meta);
+    const attempt = await addMemberToGroup(sock, authorized.phone_number, groupJid, meta);
 
     if (attempt.added) {
       console.log(ansi.green(`Adicionado: reg=${item.registration_id} -> ${normalized} em ${groupJid}`));
@@ -217,13 +216,6 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
       results.added = true;
       results.processedPhones++;
       // Randomized delay within [MIN_DELAY, MAX_DELAY] with optional jitter
-      await delaySecs(MIN_DELAY, MAX_DELAY, DELAY_JITTER);
-    } else if (attempt.isInviteV4Sent) {
-      console.log(ansi.green(`Invite enviado para ${normalized} no grupo ${groupJid}`));
-      await safeRecordEntry(Number(item.registration_id), normalized, groupJid, "Active");
-      results.inviteSent = true;
-      results.processedPhones++;
-      // Respect configured policy delay after sending invite
       await delaySecs(MIN_DELAY, MAX_DELAY, DELAY_JITTER);
     } else if (attempt.alreadyInGroup) {
       console.log(ansi.green(`Já está no grupo: ${normalized} -> ${groupJid}`));
@@ -260,14 +252,13 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
 }
 
 /**
- * Attempts to add a user to the group; if it fails due to policy/privacy,
- * sends a GroupInviteMessage to the user.
+ * Attempts to add a user to the group.
+ * If it fails, only logs the status and allows the caller to continue.
  */
 export async function addMemberToGroup(
   sock: WASocket,
   phone: string,
   groupJid: string,
-  item: AddQueueItem,
   meta?: GroupMetadata,
 ): Promise<AddAttemptResult> {
   const userJid = phoneToUserJid(phone);
@@ -282,85 +273,23 @@ export async function addMemberToGroup(
     const status = asStatusCode(first?.status);
 
     if (status === 200) {
-      return { added: true, isInviteV4Sent: false, alreadyInGroup: false };
+      return { added: true, alreadyInGroup: false };
     }
     if (status === 409) {
       // Already in the group
-      return { added: false, isInviteV4Sent: false, alreadyInGroup: true };
+      return { added: false, alreadyInGroup: true };
     }
 
-    // 403 (privacy/policy) or unknown -> try invite flow
-    const invited = await sendGroupInviteMessage(sock, userJid, groupJid, metadata);
-    if (invited) return { added: false, isInviteV4Sent: true, alreadyInGroup: false };
-
-    await safeNotifyFailure(
-      item.request_id,
-      `Falha ao adicionar ${phone} ao grupo ${groupJid}. status=${status ?? "unknown"}`,
-      { item, groupName: metadata.subject ?? null },
+    console.warn(
+      ansi.yellow(
+        `Falha ao adicionar ${phone} ao grupo ${groupJid} (${metadata.subject ?? groupJid}). status=${status ?? "unknown"}`,
+      ),
     );
-    return { added: false, isInviteV4Sent: false, alreadyInGroup: false };
+    return { added: false, alreadyInGroup: false };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(ansi.red(`Erro ao adicionar ${phone} ao grupo ${groupJid}: ${errorMsg}`));
-
-    // Fallback to invitation even on exceptions
-    try {
-      const metadata = meta ?? (await safeGroupMetadata(sock, groupJid));
-      const invited = await sendGroupInviteMessage(sock, userJid, groupJid, metadata);
-      if (invited) return { added: false, isInviteV4Sent: true, alreadyInGroup: false };
-    } catch {
-      /* ignore */
-    }
-
-    await safeNotifyFailure(item.request_id, `Erro ao adicionar número ${phone} ao grupo ${groupJid}:\n${errorMsg}`, {
-      item,
-      groupName: meta?.subject ?? null,
-    });
-    return { added: false, isInviteV4Sent: false, alreadyInGroup: false };
-  }
-}
-
-/** Sends a GroupInviteMessage directly to the contact (DM) */
-async function sendGroupInviteMessage(
-  sock: WASocket,
-  userJid: string,
-  groupJid: string,
-  meta: GroupMetadata,
-): Promise<boolean> {
-  try {
-    const code = await withTimeout(sock.groupInviteCode(groupJid));
-    if (!code) return false;
-
-    // Native WhatsApp invite message
-    const groupInviteMessage: proto.Message.IGroupInviteMessage = {
-      groupJid,
-      inviteCode: code,
-      groupName: meta?.subject ?? groupJid,
-      caption: `Convite para o grupo "${meta?.subject ?? ""}"`,
-    };
-    // @ts-expect-error: groupInviteMessage is a valid proto message but not in AnyMessageContent type
-    await withTimeout(sock.sendMessage(userJid, { groupInviteMessage }));
-    console.log(ansi.green(`Invite enviado a ${userJid} para ${groupJid}`));
-    return true;
-  } catch (e) {
-    const errMsg = String((e as Error)?.message ?? e);
-    console.warn(`Falha ao enviar invite nativo a ${userJid}: ${errMsg}`);
-
-    // Fallback: invite link as plain text (works across versions)
-    try {
-      const code = await withTimeout(sock.groupInviteCode(groupJid));
-      if (!code) return false;
-      const inviteUrl = `https://chat.whatsapp.com/${code}`;
-      const text = `Convite para o grupo "${meta?.subject ?? groupJid}":\n${inviteUrl}`;
-      await withTimeout(sock.sendMessage(userJid, { text }));
-      console.log(ansi.green(`Link de convite enviado a ${userJid} para ${groupJid}`));
-      return true;
-    } catch (fallbackErr) {
-      console.warn(
-        `Fallback de link também falhou para ${userJid}: ${String((fallbackErr as Error)?.message ?? fallbackErr)}`,
-      );
-      return false;
-    }
+    return { added: false, alreadyInGroup: false };
   }
 }
 
@@ -425,7 +354,6 @@ async function safeRegisterAttempt(requestId: string | number): Promise<void> {
 function baseResult(processed: number, total: number): AddProcessResult {
   return {
     added: false,
-    inviteSent: false,
     alreadyInGroup: false,
     processedPhones: processed,
     totalPhones: total,

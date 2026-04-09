@@ -8,19 +8,18 @@ This service processes Redis queues to:
 - remove members
 - moderate messages containing links, and optionally moderate content with OpenAI
 - maintain phone-based authorizations
-- persist messages and authentication state in PostgreSQL
 
 ## Architecture
 
-The project uses two database connections:
+The project uses one operational database connection:
 
 - **Operational database (`PG_DB_*`)**: business tables such as workers, authorizations, add/remove requests, and related data.
-- **Prisma/Auth database (`DATABASE_URL`)**: message tables and Baileys auth state tables (`WaAuthCreds`, `WaAuthKey`, etc).
 
 It also uses:
 
 - **Redis** for the `addQueue` and `removeQueue` queues
 - **Telegram Bot API** for failure alerts and moderation logs
+- local Baileys auth files in the ignored `auth/` directory
 
 ## Requirements
 
@@ -46,13 +45,7 @@ cp .env.example .env
 
 3. Fill in the variables in `.env`.
 
-4. Apply Prisma migrations to the `DATABASE_URL` database:
-
-```bash
-pnpm prisma migrate deploy
-```
-
-5. Build and run:
+4. Build and run:
 
 ```bash
 pnpm start
@@ -109,10 +102,6 @@ Based on `.env.example`:
 - `PG_DB_NAME`
 - `PG_DB_USER`
 - `PG_DB_PASSWORD`
-
-### Prisma/Auth Database (`DATABASE_URL`)
-
-- `DATABASE_URL` (required)
 
 ### Redis
 
@@ -186,16 +175,6 @@ Based on `.env.example`:
 
 ## Expected Tables
 
-### Created by Prisma migration (`DATABASE_URL`)
-
-- `account`
-- `contact`
-- `conversa`
-- `message`
-- `account_temp`
-- `WaAuthCreds`
-- `WaAuthKey`
-
 ### Expected in the operational database (`PG_DB_*`)
 
 These tables are read and written by the code and are **not** created by this repository's migrations:
@@ -236,7 +215,7 @@ These tables are read and written by the code and are **not** created by this re
 
 ## Important Behaviors
 
-- The WhatsApp session and Signal keys are stored in Postgres (`WaAuthCreds` and `WaAuthKey`).
+- The WhatsApp session and Signal keys are stored locally in `auth/`.
 - On logout (`DisconnectReason.loggedOut`), the process exits and the device must be linked again.
 - There is a special welcome rule for a group named `Mensampa Regional`.
 - The welcome audio uses the local file `primeiro_contato.mp3`.

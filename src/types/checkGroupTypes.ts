@@ -1,1 +1,1 @@
-export type MensaGroupType = "M.JB" | "R.JB" | "JB" | "OrgMB" | "MB" | "NotMensa" | "NotAGroup";
+export type MensaGroupType = "MB" | "RJB" | "NotManaged" | "NotAGroup";

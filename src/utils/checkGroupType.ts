@@ -1,20 +1,26 @@
 import type { GroupMetadata } from "baileys";
 import type { MensaGroupType } from "../types/checkGroupTypes";
 
+function normalizeGroupName(name: string | undefined | null): string {
+  return String(name ?? "").trim();
+}
+
 export function checkGroupTypeByName(name: string | undefined | null): MensaGroupType {
-  const n = String(name ?? "");
-  if (/^M[\s.]*JB/i.test(n)) {
-    return "M.JB";
-  } else if (/^R[\s.]*JB/i.test(n)) {
-    return "R.JB";
-  } else if (/^(?!R[\s.]*JB)(?!M[\s.]*JB)JB/i.test(n)) {
-    return "JB";
-  } else if (/^OrgMB/i.test(n)) {
-    return "OrgMB";
-  } else if (/^MB/i.test(n)) {
+  const normalized = normalizeGroupName(name);
+
+  if (/^R\.\s?JB\s*\|/i.test(normalized)) {
+    return "RJB";
+  }
+
+  if (
+    /^Mensa\b.*\bRegional\b/i.test(normalized) ||
+    /^Avisos Mensa\b/i.test(normalized) ||
+    /^MB\s*\|/i.test(normalized)
+  ) {
     return "MB";
   }
-  return "NotMensa";
+
+  return "NotManaged";
 }
 
 export function checkGroupTypeByMeta(meta: GroupMetadata | null | undefined): MensaGroupType {

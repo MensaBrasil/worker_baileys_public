@@ -11,8 +11,8 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import { getUnderageMemberAndLegalPhones } from "../db/pgsql";
-import { usePostgresAuthState } from "../baileys/use-postgres-auth-state";
-import { getAuthPool } from "../db/authStatePg";
+import { useMultiFileAuthState } from "baileys";
+import { getAuthStateDir } from "../baileys/auth-state-dir";
 import type { BoomError } from "../types/errorTypes";
 
 configDotenv({ path: ".env" });
@@ -56,7 +56,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Re-link the device (auth DB)."));
+        reject(new Error("Session logged out. Delete the local auth folder and link again."));
       }
     };
     const cleanup = () => {
@@ -103,7 +103,7 @@ async function main(): Promise<void> {
     )
     .parse(process.argv);
 
-  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), "default");
+  const { state, saveCreds } = await useMultiFileAuthState(getAuthStateDir());
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     version,

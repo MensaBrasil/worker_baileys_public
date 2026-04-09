@@ -11,15 +11,11 @@ import {
   isJidStatusBroadcast,
   isPnUser,
   jidDecode,
-  jidNormalizedUser,
-  type WAMessageContent,
-  type WAMessageKey,
+  useMultiFileAuthState,
 } from "baileys";
 import qrcode from "qrcode-terminal";
 import logger from "./utils/logger";
-import { usePostgresAuthState } from "./baileys/use-postgres-auth-state";
-import { onMessagesUpsert } from "./baileys/messages";
-import { makeGetMessageForAccount } from "./baileys/get-message";
+import { getAuthStateDir } from "./baileys/auth-state-dir";
 
 import { BoomError } from "./types/errorTypes";
 import { processAddQueue } from "./core/addTask";
@@ -31,8 +27,6 @@ import { delaySecs } from "./utils/delay";
 import { addNewAuthorizations, checkAuth } from "./core/authTask";
 import { handleMessageModeration } from "./core/moderationTask";
 import { registerFirstContactWelcome } from "./core/firstContactWelcome";
-import { getAuthPool } from "./db/authStatePg";
-import { prisma } from "./db/prisma";
 
 configDotenv({ path: ".env" });
 
@@ -132,10 +126,7 @@ async function main() {
     resolveRestart = resolve;
   });
 
-  let dynamicGetMessage: (key: WAMessageKey) => Promise<WAMessageContent | undefined> = async () => undefined;
-  let accountJid: string | null = null;
-
-  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), "default");
+  const { state, saveCreds } = await useMultiFileAuthState(getAuthStateDir());
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
@@ -146,7 +137,6 @@ async function main() {
     printQRInTerminal: false,
     markOnlineOnConnect: false,
     syncFullHistory: false,
-    getMessage: (key) => dynamicGetMessage(key),
   });
 
   if (pairingCodeMode && !sock.authState.creds.registered) {
@@ -181,20 +171,6 @@ async function main() {
         (sock.user as { phoneNumber?: string } | undefined)?.phoneNumber?.replace(/\D/g, "") ||
         sock.user?.id?.split(":")[0]?.split("@")[0]?.replace(/\D/g, "");
       if (!workerPhone) throw new Error("Unable to determine worker phone from Baileys instance.");
-
-      accountJid = jidNormalizedUser(sock.user?.id) ?? null;
-      if (accountJid) {
-        dynamicGetMessage = makeGetMessageForAccount(accountJid, prisma);
-        try {
-          await prisma.account.upsert({
-            where: { phone_number: accountJid },
-            update: {},
-            create: { phone_number: accountJid, situacao: "ativo" },
-          });
-        } catch (err) {
-          logger.warn({ err }, "[prisma] failed to upsert account");
-        }
-      }
 
       registerFirstContactWelcome(sock);
 
@@ -271,16 +247,7 @@ async function main() {
 
       // Event-driven moderation/auth flows
       if (moderationMode || authMode) {
-        sock.ev.on("messages.upsert", async ({ messages, type }) => {
-          if (accountJid && messages?.length) {
-            try {
-              const upsertType = (type ?? "notify") as "notify" | "append" | "replace";
-              await onMessagesUpsert(prisma, messages, accountJid, upsertType);
-            } catch (err) {
-              logger.warn({ err }, "[prisma] failed to persist messages");
-            }
-          }
-
+        sock.ev.on("messages.upsert", async ({ messages }) => {
           for (const m of messages) {
             const remoteJid = m.key.remoteJid || "";
 
@@ -353,23 +320,18 @@ async function main() {
       logDisconnectDetails(lastDisconnect?.error);
 
       if (isLoggedOut) {
-        logger.fatal({ code }, "[wa] connection closed: Session logged out. Clear auth state in DB and link again.");
+        logger.fatal(
+          { code },
+          "[wa] connection closed: Session logged out. Delete the local auth folder and link again.",
+        );
         process.exit(1);
       }
 
       logger.warn({ code }, "[wa] connection closed; scheduling restart...");
       mainLoopStarted = false;
       shouldRun = false;
-      accountJid = null;
       resolveRestart?.();
     }
-  });
-
-  sock.ev.on("messaging-history.set", ({ messages }) => {
-    if (!accountJid || !messages?.length) return;
-    void onMessagesUpsert(prisma, messages, accountJid, "append").catch((err) => {
-      logger.warn({ err }, "[prisma] failed to persist history");
-    });
   });
 
   sock.ev.on("creds.update", saveCreds);

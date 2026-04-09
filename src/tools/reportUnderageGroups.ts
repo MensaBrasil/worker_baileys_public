@@ -11,8 +11,8 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import { getUnderageLegalRepPhones, getUnderageMemberPhonesWithAge } from "../db/pgsql";
-import { usePostgresAuthState } from "../baileys/use-postgres-auth-state";
-import { getAuthPool } from "../db/authStatePg";
+import { useMultiFileAuthState } from "baileys";
+import { getAuthStateDir } from "../baileys/auth-state-dir";
 import type { BoomError } from "../types/errorTypes";
 import { checkGroupTypeByMeta } from "../utils/checkGroupType";
 
@@ -73,7 +73,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Re-link the device (auth DB)."));
+        reject(new Error("Session logged out. Delete the local auth folder and link again."));
       }
     };
     const cleanup = () => {
@@ -180,7 +180,7 @@ async function main(): Promise<void> {
     .description("Generate report of underage members (JBs and <13) present in groups.")
     .parse(process.argv);
 
-  const { state, saveCreds } = await usePostgresAuthState(getAuthPool(), "default");
+  const { state, saveCreds } = await useMultiFileAuthState(getAuthStateDir());
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     version,
@@ -237,7 +237,7 @@ async function main(): Promise<void> {
     const groupId = g.id.replace(/@g\.us$/, "");
     const groupName = g.subject ?? null;
     const groupType = checkGroupTypeByMeta(g);
-    if (groupType !== "JB" && groupType !== "M.JB" && groupType !== "R.JB") {
+    if (groupType !== "RJB") {
       continue;
     }
     const members: GroupEntry[] = [];
