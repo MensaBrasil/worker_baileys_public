@@ -217,7 +217,6 @@ These tables are read and written by the code and are **not** created by this re
 
 - The WhatsApp session and Signal keys are stored locally in `auth/`.
 - On logout (`DisconnectReason.loggedOut`), the process exits and the device must be linked again.
-- There is a special welcome rule for a group named `Mensampa Regional`.
 - The welcome audio uses the local file `primeiro_contato.mp3`.
 
 ## Contributions
