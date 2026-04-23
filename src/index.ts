@@ -232,9 +232,24 @@ async function main() {
       if (moderationMode || authMode) {
         sock.ev.on("messages.upsert", async ({ messages }) => {
           for (const m of messages) {
-            const remoteJid = m.key.remoteJid || "";
+            const keyAny = m.key as typeof m.key & {
+              remoteJidAlt?: string | null;
+              participantAlt?: string | null;
+            };
+            const remoteJid = keyAny.remoteJid || keyAny.remoteJidAlt || "";
 
             if (remoteJid && remoteJid !== "status@broadcast" && !m.key.fromMe) {
+              logger.info(
+                {
+                  messageId: m.key.id,
+                  remoteJid: keyAny.remoteJid,
+                  remoteJidAlt: keyAny.remoteJidAlt,
+                  participant: m.key.participant,
+                  participantAlt: keyAny.participantAlt,
+                },
+                "[wa] Mensagem recebida",
+              );
+
               const textContent =
                 m.message?.conversation ||
                 m.message?.extendedTextMessage?.text ||
