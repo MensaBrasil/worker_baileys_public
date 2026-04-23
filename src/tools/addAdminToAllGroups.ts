@@ -347,12 +347,9 @@ async function main(): Promise<void> {
       continue;
     }
 
-    let didAction = false;
-
     if (participant) {
       console.log(`🔼 Promovendo para admin em ${groupName} (${groupJid})`);
       const promoteAttempt = await performUpdateWithReconnect("promote", groupJid, groupName);
-      didAction = true;
       if (promoteAttempt.ok) {
         promoted++;
       } else {
@@ -369,7 +366,6 @@ async function main(): Promise<void> {
     } else {
       console.log(`➕ Adicionando em ${groupName} (${groupJid})`);
       const addAttempt = await performUpdateWithReconnect("add", groupJid, groupName);
-      didAction = true;
 
       if (addAttempt.status === 409) {
         console.log(`ℹ️ Já estava no grupo. Promovendo em ${groupName} (${groupJid})`);
@@ -419,9 +415,7 @@ async function main(): Promise<void> {
       }
     }
 
-    if (didAction) {
-      await delaySecs(minDelay, maxDelay, delayJitter);
-    }
+    await delaySecs(minDelay, maxDelay, delayJitter);
   }
 
   console.log("\nResumo:");

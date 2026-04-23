@@ -4,13 +4,10 @@ import {
   DisconnectReason,
   fetchLatestBaileysVersion,
   Browsers,
-  isHostedPnUser,
   isJidBroadcast,
   isJidGroup,
   isJidNewsletter,
   isJidStatusBroadcast,
-  isPnUser,
-  jidDecode,
   useMultiFileAuthState,
 } from "baileys";
 import qrcode from "qrcode-terminal";
@@ -84,26 +81,12 @@ async function pingUptime(url: string): Promise<void> {
 
 let mainLoopStarted = false;
 
-const normalizeDigits = (input: string | null | undefined) => (input || "").replace(/\D/g, "");
-
 const isGroupLikeJid = (jid: string | null | undefined): boolean =>
   !!jid &&
   (Boolean(isJidGroup(jid)) ||
     Boolean(isJidStatusBroadcast(jid)) ||
     Boolean(isJidBroadcast(jid)) ||
     Boolean(isJidNewsletter(jid)));
-
-const isPhoneNumberJid = (jid: string | null | undefined): boolean =>
-  !!jid &&
-  (Boolean(isPnUser(jid)) || Boolean(isHostedPnUser(jid)) || jid.endsWith("@c.us") || jid.endsWith("@s.whatsapp.net"));
-
-const extractPhoneFromJid = (jid: string | null | undefined): string | null => {
-  if (!isPhoneNumberJid(jid)) return null;
-  const decoded = jidDecode(jid!);
-  const user = decoded?.user ?? jid?.split("@")[0] ?? "";
-  const digits = normalizeDigits(user);
-  return digits.length ? digits : null;
-};
 
 function logDisconnectDetails(err: unknown) {
   if (!err) return;
@@ -277,34 +260,12 @@ async function main() {
             const shouldHandleAuth = authMode && !isGroupLikeJid(remoteJid);
 
             if (shouldHandleAuth) {
-              const pickContactNumber = () => {
-                const keyAny = m.key as Record<string, unknown>;
-                const toStr = (val: unknown) => (typeof val === "string" ? val : null);
-
-                const jidCandidates = [
-                  toStr(keyAny.participantAlt),
-                  toStr(keyAny.remoteJidAlt),
-                  toStr(keyAny.senderJid),
-                  toStr(keyAny.participant),
-                  remoteJid,
-                ];
-
-                for (const jid of jidCandidates) {
-                  const phone = extractPhoneFromJid(jid);
-                  if (phone) return phone;
-                }
-
-                return null;
-              };
-
-              const contactNumber = pickContactNumber();
-              if (!contactNumber) continue;
               try {
-                await checkAuth(contactNumber, worker.phone);
+                await checkAuth(sock, m, worker.phone);
               } catch (e) {
                 logger.warn(
-                  { err: e, number: contactNumber },
-                  "Falha ao autorizar número a partir de mensagem recebida",
+                  { err: e, remoteJid },
+                  "Falha ao autorizar/sincronizar contato a partir de mensagem recebida",
                 );
               }
             }

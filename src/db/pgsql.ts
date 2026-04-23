@@ -42,6 +42,10 @@ function readPgEnv(): PgEnv & { PG_DB_PORT: string } {
 /** Singleton pool (don’t create multiple connections across hot paths) */
 let pool: Pool | null = null;
 
+type ContactNameRow = {
+  name: string | null;
+};
+
 function getPool(): Pool {
   if (pool) return pool;
 
@@ -166,6 +170,24 @@ export async function getAllWhatsAppWorkers(): Promise<WhatsAppWorker[]> {
 }
 
 /**
+ * Retrieves a single WhatsApp worker by normalized phone number.
+ */
+export async function getWhatsAppWorkerByPhone(workerPhone: string): Promise<WhatsAppWorker | null> {
+  const normalizedWorkerPhone = String(workerPhone ?? "").replace(/\D/g, "");
+  if (!normalizedWorkerPhone) return null;
+
+  const query = `
+    SELECT id, worker_phone
+    FROM whatsapp_workers
+    WHERE REGEXP_REPLACE(COALESCE(worker_phone, ''), '[^0-9]', '', 'g') = $1
+    LIMIT 1;
+  `;
+
+  const { rows } = await getPool().query(query, [normalizedWorkerPhone]);
+  return rows.length ? (rows[0] as WhatsAppWorker) : null;
+}
+
+/**
  * Best-effort mapping between LID and phone number for future lookups.
  */
 export async function upsertLidMapping(lid: string, phone: string, source = "unknown"): Promise<void> {
@@ -208,6 +230,50 @@ export async function getWhatsappAuthorization(
 }
 
 /**
+ * Upserts a single WhatsApp authorization, updating the stored full phone number
+ * when an existing row matches by the last 8 digits for the same worker.
+ */
+export async function upsertWhatsappAuthorizationByPhone(
+  phone_number: string,
+  worker_id: number,
+): Promise<{ alreadyAuthorized: boolean }> {
+  const normalizedPhoneNumber = String(phone_number ?? "").replace(/\D/g, "");
+  if (!normalizedPhoneNumber) {
+    throw new Error("phone_number must contain at least one digit");
+  }
+
+  const existingAuthorization = await getWhatsappAuthorization(normalizedPhoneNumber.slice(-8), worker_id);
+
+  if (existingAuthorization) {
+    const query = `
+      UPDATE whatsapp_authorization
+      SET phone_number = $2,
+          updated_at = NOW()
+      WHERE auth_id = $1;
+    `;
+
+    await getPool().query(query, [existingAuthorization.auth_id, normalizedPhoneNumber]);
+
+    return {
+      alreadyAuthorized: existingAuthorization.phone_number === normalizedPhoneNumber,
+    };
+  }
+
+  const query = `
+    INSERT INTO whatsapp_authorization (phone_number, worker_id)
+    VALUES ($1, $2)
+    ON CONFLICT (phone_number, worker_id)
+    DO UPDATE SET updated_at = NOW();
+  `;
+
+  await getPool().query(query, [normalizedPhoneNumber, worker_id]);
+
+  return {
+    alreadyAuthorized: false,
+  };
+}
+
+/**
  * Bulk upsert WhatsApp authorizations.
  * - Normalizes phone to digits-only string.
  * - Uses ON CONFLICT (phone_number, worker_id) to touch updated_at.
@@ -238,6 +304,70 @@ export async function updateWhatsappAuthorizations(authorizations: WhatsAppAutho
   `;
 
   await getPool().query(query, values);
+}
+
+/**
+ * Resolves the preferred contact name for a phone number.
+ * In this worker, legal representative names take precedence over member names
+ * when the same number exists in both sources.
+ */
+export async function resolveContactNameByPhone(phone_number: string): Promise<string | null> {
+  const normalizedPhoneNumber = String(phone_number ?? "").replace(/\D/g, "");
+  const last8Digits = normalizedPhoneNumber.slice(-8);
+
+  if (!normalizedPhoneNumber || !last8Digits) {
+    return null;
+  }
+
+  const query = `
+    WITH candidate_names AS (
+      SELECT
+        NULLIF(BTRIM(lr.full_name), '') AS name,
+        CASE
+          WHEN REGEXP_REPLACE(COALESCE(lr.phone, ''), '[^0-9]', '', 'g') = $1
+            OR REGEXP_REPLACE(COALESCE(lr.alternative_phone, ''), '[^0-9]', '', 'g') = $1
+          THEN 0
+          ELSE 1
+        END AS match_priority,
+        0 AS source_priority,
+        lr.representative_id AS entity_id
+      FROM legal_representatives lr
+      WHERE
+        REGEXP_REPLACE(COALESCE(lr.phone, ''), '[^0-9]', '', 'g') = $1
+        OR REGEXP_REPLACE(COALESCE(lr.alternative_phone, ''), '[^0-9]', '', 'g') = $1
+        OR RIGHT(REGEXP_REPLACE(COALESCE(lr.phone, ''), '[^0-9]', '', 'g'), 8) = $2
+        OR RIGHT(REGEXP_REPLACE(COALESCE(lr.alternative_phone, ''), '[^0-9]', '', 'g'), 8) = $2
+
+      UNION ALL
+
+      SELECT
+        COALESCE(
+          NULLIF(BTRIM(r.social_name), ''),
+          NULLIF(BTRIM(r.name), ''),
+          NULLIF(BTRIM(CONCAT_WS(' ', r.first_name, r.last_name)), '')
+        ) AS name,
+        CASE
+          WHEN REGEXP_REPLACE(COALESCE(p.phone_number, ''), '[^0-9]', '', 'g') = $1
+          THEN 0
+          ELSE 1
+        END AS match_priority,
+        1 AS source_priority,
+        r.registration_id AS entity_id
+      FROM phones p
+      JOIN registration r ON r.registration_id = p.registration_id
+      WHERE
+        REGEXP_REPLACE(COALESCE(p.phone_number, ''), '[^0-9]', '', 'g') = $1
+        OR RIGHT(REGEXP_REPLACE(COALESCE(p.phone_number, ''), '[^0-9]', '', 'g'), 8) = $2
+    )
+    SELECT name
+    FROM candidate_names
+    WHERE name IS NOT NULL
+    ORDER BY source_priority ASC, match_priority ASC, entity_id ASC
+    LIMIT 1;
+  `;
+
+  const { rows } = await getPool().query<ContactNameRow>(query, [normalizedPhoneNumber, last8Digits]);
+  return rows[0]?.name ?? null;
 }
 
 /**
