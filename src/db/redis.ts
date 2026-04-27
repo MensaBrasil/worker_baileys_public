@@ -11,7 +11,7 @@ const client: RedisClientType = createClient({
     port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379,
     reconnectStrategy: (retries: number) => {
       if (retries > 20) {
-        console.error("Too many attempts to reconnect. Redis connection was terminated. Closing app...");
+        console.error("Tentativas de reconexão ao Redis excedidas. Conexão encerrada. Fechando o app...");
         process.exit(1);
       }
       return Math.min(retries * 500, 5000);
@@ -20,7 +20,7 @@ const client: RedisClientType = createClient({
 });
 
 client.on("error", (err: Error) => {
-  console.error(err);
+  console.error("Erro no Redis:", err);
   process.exit(1);
 });
 
@@ -99,10 +99,10 @@ export async function registerConsentAutoReplySent(phone: string): Promise<void>
 export async function testRedisConnection(): Promise<void> {
   try {
     await connect();
-    console.log("✅ Successfully connected to Redis");
+    console.log("✅ Conexão com o Redis realizada com sucesso");
     await disconnect();
   } catch (error) {
-    console.error("❌ Failed to connect to Redis:", error);
+    console.error("❌ Falha ao conectar ao Redis:", error);
     process.exit(1);
   }
 }

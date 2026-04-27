@@ -9,6 +9,7 @@ import type {
   WhatsAppModerationInput,
   WhatsAppWorker,
 } from "../types/pgsqlTypes.ts";
+import { normalizeCommunicationReason } from "../utils/ptBrMessages";
 
 configDotenv({ path: ".env" });
 
@@ -27,11 +28,11 @@ function readPgEnv(): PgEnv & { PG_DB_PORT: string } {
 
   if (missing.length) {
     const keys = missing.map(([k]) => k).join(", ");
-    throw new Error(`Missing required DB env vars: ${keys}`);
+    throw new Error(`Variáveis de ambiente obrigatórias do banco ausentes: ${keys}`);
   }
 
   const requiredEnv = (name: keyof PgEnv, value: string | undefined): string => {
-    if (!value) throw new Error(`Missing required DB env var: ${name}`);
+    if (!value) throw new Error(`Variável de ambiente obrigatória do banco ausente: ${name}`);
     return value;
   };
 
@@ -57,7 +58,7 @@ function getPool(): Pool {
   const env = readPgEnv();
   const port = Number.parseInt(env.PG_DB_PORT, 10);
   if (Number.isNaN(port)) {
-    throw new Error(`PG_DB_PORT must be a number, got "${env.PG_DB_PORT}"`);
+    throw new Error(`PG_DB_PORT deve ser numérica. Recebido: "${env.PG_DB_PORT}"`);
   }
 
   pool = new Pool({
@@ -72,7 +73,7 @@ function getPool(): Pool {
   // Optional: surface unexpected pool errors early
   pool.on("error", (err) => {
     // Don’t crash the process; log and let the caller decide policy.
-    console.error("[pg] Pool error:", err);
+    console.error("[pg] Erro no pool de conexões:", err);
   });
 
   return pool;
@@ -82,12 +83,13 @@ function getPool(): Pool {
  * Updates member_groups to record a user's exit from a group.
  */
 export async function recordUserExitFromGroup(phone_number: string, group_id: string, reason: string): Promise<void> {
+  const normalizedReason = normalizeCommunicationReason(reason);
   const query = `
     UPDATE member_groups
     SET updated_at = NOW(), exit_date = NOW(), removal_reason = $3
     WHERE phone_number = $1 AND group_id = $2 AND exit_date IS NULL;
   `;
-  await getPool().query(query, [phone_number, group_id, reason]);
+  await getPool().query(query, [phone_number, group_id, normalizedReason]);
 }
 
 /**
@@ -244,7 +246,7 @@ export async function upsertWhatsappAuthorizationByPhone(
 ): Promise<{ alreadyAuthorized: boolean }> {
   const normalizedPhoneNumber = String(phone_number ?? "").replace(/\D/g, "");
   if (!normalizedPhoneNumber) {
-    throw new Error("phone_number must contain at least one digit");
+    throw new Error("phone_number deve conter pelo menos um dígito");
   }
 
   const existingAuthorization = await getWhatsappAuthorization(normalizedPhoneNumber.slice(-8), worker_id);

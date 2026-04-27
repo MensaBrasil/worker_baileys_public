@@ -70,7 +70,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Delete the local auth folder and link again."));
+        reject(new Error("Sessão desconectada. Apague a pasta local de autenticação e vincule novamente."));
       }
     };
     const cleanup = () => {
@@ -80,7 +80,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
     timer = setTimeout(() => {
       if (!resolved) {
         cleanup();
-        reject(new Error("Timeout waiting for WhatsApp connection."));
+        reject(new Error("Tempo limite excedido aguardando conexão com o WhatsApp."));
       }
     }, timeoutMs);
     sock.ev.on("connection.update", onUpdate);
@@ -122,14 +122,16 @@ async function main(): Promise<void> {
   const program = new Command();
   program
     .name("getAdmins")
-    .description("Fetch groups and check if phones linked to registration_ids are admins/superadmins in those groups.")
-    .requiredOption("--ids <ids>", "Comma-separated registration IDs.")
+    .description(
+      "Busca grupos e verifica se telefones ligados aos registration_ids são admins/superadmins nesses grupos.",
+    )
+    .requiredOption("--ids <ids>", "IDs de inscrição separados por vírgula.")
     .parse(process.argv);
 
   const { ids } = program.opts<{ ids: string }>();
   const parsedIds = parseIds(ids);
   if (!parsedIds.length) {
-    console.error("❌ No valid registration ids provided. Example: --ids 1234, 4569,7894");
+    console.error("❌ Nenhum ID de inscrição válido informado. Exemplo: --ids 1234, 4569,7894");
     process.exit(1);
   }
 
@@ -147,16 +149,16 @@ async function main(): Promise<void> {
 
   await waitForOpen(sock);
 
-  console.log("✅ Connected. Fetching groups...");
+  console.log("✅ Conectado. Buscando grupos...");
   const groupsRecord = await sock.groupFetchAllParticipating();
   const groups: GroupMetadata[] = Object.values(groupsRecord);
 
   if (!groups.length) {
-    console.log("No groups found for this client.");
+    console.log("Nenhum grupo encontrado para este cliente.");
   }
 
   // Load phones for registrations and index by JID for quick lookup
-  console.log("Loading phones for registrations:", parsedIds.join(", "));
+  console.log("Carregando telefones das inscrições:", parsedIds.join(", "));
   const regPhones = await loadPhonesForRegistrations(parsedIds);
   const jidIndex = indexPhonesByJid(regPhones);
 
@@ -195,23 +197,23 @@ async function main(): Promise<void> {
   fs.writeFileSync(file, JSON.stringify({ registrations: parsedIds, results }, null, 2));
 
   // Console summary
-  console.log("\nSummary:");
+  console.log("\nResumo:");
   if (!results.length) {
-    console.log("No admin matches found for the provided registrations.");
+    console.log("Nenhuma correspondência de admin encontrada para as inscrições informadas.");
   } else {
     for (const r of results) {
-      console.log(`- Group: ${r.groupName ?? r.groupId} (${r.groupId})`);
+      console.log(`- Grupo: ${r.groupName ?? r.groupId} (${r.groupId})`);
       for (const m of r.matches) {
-        console.log(`  • reg=${m.registration_id} phone=${m.phone} role=${m.role}`);
+        console.log(`  • inscrição=${m.registration_id} telefone=${m.phone} papel=${m.role}`);
       }
     }
   }
 
-  console.log(`\n📁 Saved detailed results to: ${file}`);
+  console.log(`\n📁 Resultado detalhado salvo em: ${file}`);
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err?.message || err);
+  console.error("❌ Erro:", err?.message || err);
   process.exit(1);
 });

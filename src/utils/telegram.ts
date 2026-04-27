@@ -10,16 +10,18 @@ configDotenv({ path: ".env" });
 async function telegramRequest(method: string, payload: Record<string, unknown>): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    console.warn("[telegram] Skipping request: TELEGRAM_BOT_TOKEN not set.");
+    console.warn("[telegram] Requisição ignorada: TELEGRAM_BOT_TOKEN não definido.");
     return;
   }
   const url = `https://api.telegram.org/bot${token}/${method}`;
 
   const chatId = (payload as { chat_id?: string | number }).chat_id;
   const t = (payload as { text?: string }).text;
-  const preview = t ? (t.length > 140 ? `${t.slice(0, 140)}… (${t.length} chars)` : t) : undefined;
+  const preview = t ? (t.length > 140 ? `${t.slice(0, 140)}… (${t.length} caracteres)` : t) : undefined;
 
-  console.log(`[telegram] -> ${method} to chat ${chatId ?? "<unknown>"}${preview ? ` | preview: ${preview}` : ""}`);
+  console.log(
+    `[telegram] -> ${method} para chat ${chatId ?? "<desconhecido>"}${preview ? ` | prévia: ${preview}` : ""}`,
+  );
 
   try {
     const controller = new AbortController();
@@ -35,7 +37,7 @@ async function telegramRequest(method: string, payload: Record<string, unknown>)
     const raw = await res.text().catch(() => "");
 
     if (!res.ok) {
-      console.warn(`[telegram] HTTP ${res.status} ${res.statusText}. Body: ${raw}`);
+      console.warn(`[telegram] HTTP ${res.status} ${res.statusText}. Corpo: ${raw}`);
       return;
     }
 
@@ -43,16 +45,18 @@ async function telegramRequest(method: string, payload: Record<string, unknown>)
     try {
       const data = raw ? JSON.parse(raw) : {};
       if (data?.ok) {
-        const mid = data?.result?.message_id ?? data?.result?.messageId ?? "<no-id>";
-        console.log(`[telegram] OK: ${method} delivered to ${chatId ?? "<unknown>"} (message_id=${mid}).`);
+        const mid = data?.result?.message_id ?? data?.result?.messageId ?? "<sem-id>";
+        console.log(`[telegram] OK: ${method} entregue para ${chatId ?? "<desconhecido>"} (message_id=${mid}).`);
       } else {
-        console.warn(`[telegram] API ok=false. Description: ${data?.description ?? "<none>"}. Raw: ${raw}`);
+        console.warn(`[telegram] API ok=false. Descrição: ${data?.description ?? "<nenhuma>"}. Resposta bruta: ${raw}`);
       }
     } catch (e) {
-      console.warn(`[telegram] Non-JSON response. Assuming success. Raw: ${raw}. ParseErr: ${String(e)}`);
+      console.warn(
+        `[telegram] Resposta não JSON. Assumindo sucesso. Resposta bruta: ${raw}. Erro de parse: ${String(e)}`,
+      );
     }
   } catch (err) {
-    console.warn("[telegram] Error sending request:", err);
+    console.warn("[telegram] Erro ao enviar requisição:", err);
   }
 }
 
@@ -62,7 +66,7 @@ export async function sendTelegramMessage(
   parseMode: "HTML" | "MarkdownV2" | undefined = "HTML",
 ): Promise<void> {
   if (!chatIdEnv) {
-    console.warn("[telegram] Skipping sendMessage: chat id env not set.");
+    console.warn("[telegram] sendMessage ignorado: variável de chat id não definida.");
     return;
   }
   await telegramRequest("sendMessage", {
@@ -80,14 +84,14 @@ export async function sendTelegramMessage(
  */
 export async function sendTelegramFlaggedLog(payload: FlaggedLogPayload): Promise<void> {
   const lines = [
-    "<b>Flagged Message</b>",
-    `<b>Time:</b> ${payload.time}`,
-    `<b>Sender:</b> ${payload.sender}`,
-    `<b>Group:</b> ${payload.groupName}`,
-    `<b>Message:</b>\n<pre>${escapeHtml(payload.message)}</pre>`,
-    `<b>Flagged Categories:</b> ${payload.categoriesInline}`,
+    "<b>Mensagem sinalizada</b>",
+    `<b>Horário:</b> ${payload.time}`,
+    `<b>Remetente:</b> ${payload.sender}`,
+    `<b>Grupo:</b> ${payload.groupName}`,
+    `<b>Mensagem:</b>\n<pre>${escapeHtml(payload.message)}</pre>`,
+    `<b>Categorias sinalizadas:</b> ${payload.categoriesInline}`,
   ];
-  if (payload.modalitiesLine) lines.push(`<b>Input Modalities:</b> ${payload.modalitiesLine}`);
+  if (payload.modalitiesLine) lines.push(`<b>Modalidades de entrada:</b> ${payload.modalitiesLine}`);
 
   await sendTelegramMessage(process.env.TELEGRAM_MODERATIONS_CHAT_ID, lines.join("\n"), "HTML");
 }
@@ -106,11 +110,11 @@ export async function notifyAdditionFailure(payload: AdditionFailurePayload): Pr
   const lines = [
     "<b>⚠️ FALHA NA INCLUSÃO ⚠️</b>",
     `<b>Horário:</b> ${ts}`,
-    `<b>Request ID:</b> ${escapeHtml(String(payload.requestId))}`,
+    `<b>ID da solicitação:</b> ${escapeHtml(String(payload.requestId))}`,
   ];
 
   if (payload.registrationId != null)
-    lines.push(`<b>Registration ID:</b> ${escapeHtml(String(payload.registrationId))}`);
+    lines.push(`<b>ID da inscrição:</b> ${escapeHtml(String(payload.registrationId))}`);
   if (payload.groupName || payload.groupId) {
     const grp = payload.groupName
       ? `${escapeHtml(payload.groupName)} (${escapeHtml(String(payload.groupId ?? ""))})`
@@ -130,16 +134,16 @@ export async function notifyAdditionFailure(payload: AdditionFailurePayload): Pr
 export async function notifyRemovalFailure(payload: RemovalFailurePayload): Promise<void> {
   const ts = new Date().toISOString();
   const lines = [
-    "<b>⚠️ MEMBER REMOVAL FAILED ⚠️</b>",
-    `<b>Time:</b> ${ts}`,
-    `<b>Member Phone:</b> ${payload.phone}`,
-    `<b>Registration ID:</b> ${payload.registrationId}`,
+    "<b>⚠️ FALHA NA REMOÇÃO DE MEMBRO ⚠️</b>",
+    `<b>Horário:</b> ${ts}`,
+    `<b>Telefone do membro:</b> ${payload.phone}`,
+    `<b>ID da inscrição:</b> ${payload.registrationId}`,
   ];
   const groupInfo = payload.groupName ? `${payload.groupName} (${payload.groupId})` : payload.groupId;
-  lines.push(`<b>Group:</b> ${groupInfo}`);
-  if (payload.communityId) lines.push(`<b>Community ID:</b> ${payload.communityId}`);
-  lines.push(`<b>Removal Reason:</b> ${escapeHtml(payload.removalReason)}`);
-  if (payload.failureReason) lines.push(`<b>Failure Reason:</b> ${escapeHtml(payload.failureReason)}`);
+  lines.push(`<b>Grupo:</b> ${groupInfo}`);
+  if (payload.communityId) lines.push(`<b>ID da comunidade:</b> ${payload.communityId}`);
+  lines.push(`<b>Motivo da remoção:</b> ${escapeHtml(payload.removalReason)}`);
+  if (payload.failureReason) lines.push(`<b>Motivo da falha:</b> ${escapeHtml(payload.failureReason)}`);
 
   await sendTelegramMessage(process.env.TELEGRAM_FAILURES_CHAT_ID, lines.join("\n"), "HTML");
 }

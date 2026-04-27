@@ -9,13 +9,13 @@
  */
 export async function delaySecs(minSeconds: number, maxSeconds: number, jitterSeconds: number = 0): Promise<void> {
   if (!Number.isFinite(minSeconds) || !Number.isFinite(maxSeconds) || !Number.isFinite(jitterSeconds)) {
-    throw new Error("minSeconds, maxSeconds, and jitterSeconds must be finite numbers.");
+    throw new Error("minSeconds, maxSeconds e jitterSeconds devem ser números finitos.");
   }
   if (minSeconds < 0 || maxSeconds < 0 || jitterSeconds < 0) {
-    throw new Error("minSeconds, maxSeconds, and jitterSeconds must be >= 0.");
+    throw new Error("minSeconds, maxSeconds e jitterSeconds devem ser >= 0.");
   }
   if (maxSeconds < minSeconds) {
-    throw new Error("maxSeconds must be >= minSeconds.");
+    throw new Error("maxSeconds deve ser >= minSeconds.");
   }
 
   const rand = (lo: number, hi: number) => Math.random() * (hi - lo) + lo;

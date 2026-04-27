@@ -18,9 +18,9 @@ const client: RedisClientType = createClient({
 async function connectToRedis(): Promise<void> {
   try {
     await client.connect();
-    console.log("✅ Connected to Redis");
+    console.log("✅ Conectado ao Redis");
   } catch (error) {
-    console.error("❌ Failed to connect to Redis:", error);
+    console.error("❌ Falha ao conectar ao Redis:", error);
     process.exit(1);
   }
 }
@@ -43,22 +43,22 @@ async function saveQueueToFile(queueData: unknown[], filename: string): Promise<
 
   const filePath = path.join(queueDir, filename);
   fs.writeFileSync(filePath, JSON.stringify(queueData, null, 2));
-  console.log(`📁 Queue saved to ${filePath}`);
+  console.log(`📁 Fila salva em ${filePath}`);
 }
 
 async function main(): Promise<void> {
   const program = new Command();
 
   program
-    .option("--add", "Get add queue")
-    .option("--remove", "Get remove queue")
-    .option("--all", "Get all queues")
+    .option("--add", "Obter fila de adição")
+    .option("--remove", "Obter fila de remoção")
+    .option("--all", "Obter todas as filas")
     .parse();
 
   const options = program.opts();
 
   if (!options.add && !options.remove && !options.all) {
-    console.error("❌ Please specify --add, --remove, or --all");
+    console.error("❌ Informe --add, --remove ou --all");
     process.exit(1);
   }
 
@@ -75,10 +75,12 @@ async function main(): Promise<void> {
       await saveQueueToFile(removeQueue, "removeQueue.json");
     }
   } catch (error) {
-    console.error("❌ Error processing queues:", error);
+    console.error("❌ Erro ao processar filas:", error);
   } finally {
     await disconnectFromRedis();
   }
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error("❌ Erro inesperado:", error);
+});

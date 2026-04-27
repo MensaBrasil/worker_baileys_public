@@ -73,7 +73,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Delete the local auth folder and link again."));
+        reject(new Error("Sessão desconectada. Apague a pasta local de autenticação e vincule novamente."));
       }
     };
     const cleanup = () => {
@@ -83,7 +83,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
     timer = setTimeout(() => {
       if (!resolved) {
         cleanup();
-        reject(new Error("Timeout waiting for WhatsApp connection."));
+        reject(new Error("Tempo limite excedido aguardando conexão com o WhatsApp."));
       }
     }, timeoutMs);
     sock.ev.on("connection.update", onUpdate);
@@ -94,10 +94,10 @@ function parseEnvNumber(name: string, fallback?: number): number {
   const raw = process.env[name];
   if (raw == null || raw === "") {
     if (fallback != null) return fallback;
-    throw new Error(`Missing required env var: ${name}`);
+    throw new Error(`Variável de ambiente obrigatória ausente: ${name}`);
   }
   const n = Number(raw);
-  if (!Number.isFinite(n)) throw new Error(`Env ${name} must be a number. Got: "${raw}"`);
+  if (!Number.isFinite(n)) throw new Error(`A variável de ambiente ${name} deve ser numérica. Recebido: "${raw}"`);
   return n;
 }
 
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
   const program = new Command();
   program
     .name("reportUnderageGroups")
-    .description("Generate report of underage members (JBs and <13) present in groups.")
+    .description("Gera relatório de membros menores de idade (JBs e menores de 13) presentes em grupos.")
     .parse(process.argv);
 
   const { state, saveCreds } = await useMultiFileAuthState(getAuthStateDir());
@@ -194,15 +194,15 @@ async function main(): Promise<void> {
 
   await waitForOpen(sock);
 
-  console.log("✅ Connected. Fetching groups...");
+  console.log("✅ Conectado. Buscando grupos...");
   const groupsRecord = await sock.groupFetchAllParticipating();
   const groups: GroupMetadata[] = Object.values(groupsRecord);
 
   if (!groups.length) {
-    console.log("No groups found for this client.");
+    console.log("Nenhum grupo encontrado para este cliente.");
   }
 
-  console.log("Loading underage member phones + ages from DB...");
+  console.log("Carregando telefones e idades de membros menores de idade do banco...");
   const underage = await getUnderageMemberPhonesWithAge();
   const legalReps = await getUnderageLegalRepPhones();
 
@@ -333,7 +333,7 @@ async function main(): Promise<void> {
   const file = path.join(outDir, `reportUnderageGroups-${nowStamp()}.json`);
   fs.writeFileSync(file, JSON.stringify({ summary, results }, null, 2));
 
-  console.log("\nSummary:");
+  console.log("\nResumo:");
   console.log(`- JBs (13-17) em grupos: ${summary.jb.group_entries} entradas / ${summary.jb.unique_phones} telefones`);
   console.log(
     `- <13 em grupos: ${summary.menor13.group_entries} entradas / ${summary.menor13.unique_phones} telefones`,
@@ -349,11 +349,11 @@ async function main(): Promise<void> {
     `- Estimativa media p/ remover todos os numeros: ${summary.removal_estimate.total_all_estimated_human} ` +
       `(${summary.removal_estimate.total_all_estimated_secs}s)`,
   );
-  console.log(`\n📁 Saved detailed results to: ${file}`);
+  console.log(`\n📁 Resultado detalhado salvo em: ${file}`);
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err?.message || err);
+  console.error("❌ Erro:", err?.message || err);
   process.exit(1);
 });

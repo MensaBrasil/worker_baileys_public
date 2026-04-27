@@ -206,12 +206,12 @@ function randomIntInclusive(min: number, max: number): number {
 
 function pickRandom<T>(items: readonly T[]): T {
   if (items.length === 0) {
-    throw new Error("Cannot pick a random item from an empty list.");
+    throw new Error("Não é possível escolher um item aleatório de uma lista vazia.");
   }
 
   const item = items[randomIntInclusive(0, items.length - 1)];
   if (item == null) {
-    throw new Error("Failed to pick a random item.");
+    throw new Error("Falha ao escolher um item aleatório.");
   }
 
   return item;
@@ -249,7 +249,7 @@ export async function handleConsentAutoReply(sock: WASocket, message: WAMessage)
         senderJid: senderContext.senderJid,
         targetJid: senderContext.targetJid,
       },
-      "[consent-auto-reply] Mensagem ignorada: nao foi possivel resolver telefone do remetente",
+      "[consent-auto-reply] Mensagem ignorada: não foi possível resolver telefone do remetente",
     );
     return false;
   }
@@ -259,7 +259,7 @@ export async function handleConsentAutoReply(sock: WASocket, message: WAMessage)
       {
         phone: senderPhone,
       },
-      "[consent-auto-reply] Resposta automatica ignorada: telefone em cooldown",
+      "[consent-auto-reply] Resposta automática ignorada: telefone em cooldown",
     );
     return true;
   }
@@ -274,7 +274,7 @@ export async function handleConsentAutoReply(sock: WASocket, message: WAMessage)
       foundInDatabase: Boolean(contactName),
       replyDelaySeconds,
     },
-    "[consent-auto-reply] Aguardando antes de enviar resposta automatica",
+    "[consent-auto-reply] Aguardando antes de enviar resposta automática",
   );
 
   await sleep(replyDelaySeconds * 1000);
@@ -288,7 +288,7 @@ export async function handleConsentAutoReply(sock: WASocket, message: WAMessage)
       foundInDatabase: Boolean(contactName),
       replyDelaySeconds,
     },
-    "[consent-auto-reply] Resposta automatica enviada",
+    "[consent-auto-reply] Resposta automática enviada",
   );
 
   return true;

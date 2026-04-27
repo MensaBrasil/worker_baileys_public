@@ -2,6 +2,7 @@ import type { BaileysEventMap, GroupMetadata, proto, WAMessageKey, WASocket } fr
 import { config as configDotenv } from "dotenv";
 import { findRegistrationIdByPhone, insertWhatsAppModeration } from "../db/pgsql";
 import logger from "../utils/logger";
+import { MODERATION_REASONS, type ModerationReason } from "../utils/ptBrMessages";
 import { findParticipant } from "../utils/waParticipants";
 
 configDotenv({ path: ".env" });
@@ -238,26 +239,26 @@ export async function handleMessageModeration(
       const groupId = fromJid.endsWith("@g.us") ? fromJid.replace(/@g\.us$/, "") : fromJid;
       const senderJid = key?.participantAlt ?? key?.participant ?? key?.remoteJidAlt ?? key?.remoteJid ?? "";
       const phone = (senderJid.split("@")[0] || "").replace(/\D/g, "");
-      let deletionReason: string;
+      let deletionReason: ModerationReason;
       if (hasGroupInviteLink) {
-        deletionReason = "group_invite_link";
+        deletionReason = MODERATION_REASONS.conviteDeGrupo;
       } else if (hasShortenedLink) {
-        deletionReason = "shortened_link";
+        deletionReason = MODERATION_REASONS.linkEncurtado;
       } else if (hasApiWhatsAppLink) {
-        deletionReason = "api_whatsapp_link";
+        deletionReason = MODERATION_REASONS.linkApiWhatsapp;
       } else if (hasWaMeLink) {
-        deletionReason = "wa_me_link";
+        deletionReason = MODERATION_REASONS.linkWaMe;
       } else if (hasBannedCommunityId) {
-        deletionReason = "community_id";
+        deletionReason = MODERATION_REASONS.idDeComunidade;
       } else if (hasCommunityLink) {
-        deletionReason = "community_link";
+        deletionReason = MODERATION_REASONS.linkDeComunidade;
       } else {
-        deletionReason = "link";
+        deletionReason = MODERATION_REASONS.link;
       }
       if (deletion.deleted) {
-        logger.info({ phone, groupId, reason: deletionReason }, "Moderation: link deleted successfully");
+        logger.info({ phone, groupId, reason: deletionReason }, "Moderação: link removido com sucesso");
       } else {
-        logger.warn({ phone, groupId, reason: deletionReason }, "Moderation: link deletion failed");
+        logger.warn({ phone, groupId, reason: deletionReason }, "Moderação: falha ao remover link");
       }
 
       try {
@@ -280,9 +281,9 @@ export async function handleMessageModeration(
           phone,
           content: text || null,
         });
-        logger.info({ phone, groupId, reason: deletionReason }, "Moderation: record stored in database");
+        logger.info({ phone, groupId, reason: deletionReason }, "Moderação: registro salvo no banco");
       } catch (err) {
-        logger.error({ err }, "Moderation: failed to store record in database");
+        logger.error({ err }, "Moderação: falha ao salvar registro no banco");
       }
     }
   }

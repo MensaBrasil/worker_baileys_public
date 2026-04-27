@@ -56,7 +56,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Delete the local auth folder and link again."));
+        reject(new Error("Sessão desconectada. Apague a pasta local de autenticação e vincule novamente."));
       }
     };
     const cleanup = () => {
@@ -66,7 +66,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
     timer = setTimeout(() => {
       if (!resolved) {
         cleanup();
-        reject(new Error("Timeout waiting for WhatsApp connection."));
+        reject(new Error("Tempo limite excedido aguardando conexão com o WhatsApp."));
       }
     }, timeoutMs);
     sock.ev.on("connection.update", onUpdate);
@@ -75,7 +75,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
 
 function phoneToUserJid(input: string): string {
   const digits = (input || "").replace(/\D/g, "");
-  if (!digits) throw new Error(`Invalid number: "${input}"`);
+  if (!digits) throw new Error(`Número inválido: "${input}"`);
   return `${digits}@s.whatsapp.net`;
 }
 
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   program
     .name("getJBAdmins")
     .description(
-      "Fetch groups and check if underage members (<18) or their legal representatives are admins/superadmins.",
+      "Busca grupos e verifica se membros menores de 18 anos ou seus responsáveis legais são admins/superadmins.",
     )
     .parse(process.argv);
 
@@ -117,15 +117,15 @@ async function main(): Promise<void> {
 
   await waitForOpen(sock);
 
-  console.log("✅ Connected. Fetching groups...");
+  console.log("✅ Conectado. Buscando grupos...");
   const groupsRecord = await sock.groupFetchAllParticipating();
   const groups: GroupMetadata[] = Object.values(groupsRecord);
 
   if (!groups.length) {
-    console.log("No groups found for this client.");
+    console.log("Nenhum grupo encontrado para este cliente.");
   }
 
-  console.log("Loading underage members and legal representatives phones from DB...");
+  console.log("Carregando telefones de menores de idade e responsáveis legais do banco...");
   const underage = await getUnderageMemberAndLegalPhones();
 
   // Normalize digits only for safety
@@ -167,24 +167,24 @@ async function main(): Promise<void> {
   const file = path.join(outDir, `getJBAdmins-${nowStamp()}.json`);
   fs.writeFileSync(file, JSON.stringify({ results }, null, 2));
 
-  console.log("\nSummary:");
+  console.log("\nResumo:");
   if (!results.length) {
-    console.log("No admin matches among underage members or their representatives.");
+    console.log("Nenhuma correspondência de admin entre menores de idade ou responsáveis.");
   } else {
     for (const r of results) {
-      console.log(`- Group: ${r.groupName ?? r.groupId} (${r.groupId})`);
+      console.log(`- Grupo: ${r.groupName ?? r.groupId} (${r.groupId})`);
       for (const m of r.matches) {
-        const who = m.is_legal_rep ? "legal_rep" : "member";
-        console.log(`  • reg=${m.registration_id} phone=${m.phone} type=${who} role=${m.role}`);
+        const who = m.is_legal_rep ? "responsável_legal" : "membro";
+        console.log(`  • inscrição=${m.registration_id} telefone=${m.phone} tipo=${who} papel=${m.role}`);
       }
     }
   }
 
-  console.log(`\n📁 Saved detailed results to: ${file}`);
+  console.log(`\n📁 Resultado detalhado salvo em: ${file}`);
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err?.message || err);
+  console.error("❌ Erro:", err?.message || err);
   process.exit(1);
 });

@@ -4,6 +4,7 @@ import { recordUserExitFromGroup } from "../db/pgsql";
 import { getFromRemoveQueue, requeueRemoveQueue } from "../db/redis";
 import { delaySecs } from "../utils/delay";
 import { asGroupJid, phoneToUserJid } from "../utils/phoneToJid";
+import { normalizeCommunicationReason } from "../utils/ptBrMessages";
 import { notifyRemovalFailure } from "../utils/telegram";
 import { findParticipant, isParticipantAdmin } from "../utils/waParticipants";
 
@@ -14,10 +15,10 @@ function parseEnvNumber(name: string, fallback?: number): number {
   const raw = process.env[name];
   if (raw == null || raw === "") {
     if (fallback != null) return fallback;
-    throw new Error(`Missing required env var: ${name}`);
+    throw new Error(`Variável de ambiente obrigatória ausente: ${name}`);
   }
   const n = Number(raw);
-  if (!Number.isFinite(n)) throw new Error(`Env ${name} must be a number. Got: "${raw}"`);
+  if (!Number.isFinite(n)) throw new Error(`A variável de ambiente ${name} deve ser numérica. Recebido: "${raw}"`);
   return n;
 }
 
@@ -98,7 +99,7 @@ function asStatusCode(status: unknown): number | null {
 async function withTimeout<T>(p: Promise<T>, ms = CALL_TIMEOUT_MS): Promise<T> {
   let t: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, rej) => {
-    t = setTimeout(() => rej(new Error(`Operation timed out after ${ms}ms`)), ms);
+    t = setTimeout(() => rej(new Error(`Operação excedeu o tempo limite após ${ms}ms`)), ms);
   });
   try {
     const res = await Promise.race([p, timeout]);
@@ -125,10 +126,11 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
     return false;
   }
 
-  const { registration_id, phone, groupId, reason, communityId } = item;
+  const { registration_id, phone, groupId, communityId } = item;
+  const reason = normalizeCommunicationReason(item.reason);
   console.log(
     ansi.cyan(
-      `Processando remoção do membro reg=${registration_id} (${phone}) do grupo ${groupId}` +
+      `Processando remoção do membro inscrição=${registration_id} (${phone}) do grupo ${groupId}` +
         (communityId ? ` (e comunidade ${communityId})` : ""),
     ),
   );
@@ -163,7 +165,7 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
 
   if (result.removed && result.removalType === "Community") {
     if (!communityIdToUse) {
-      console.log(ansi.yellow(`Remoção da comunidade confirmada, mas communityId está ausente para ${phone}.`));
+      console.log(ansi.yellow(`Remoção da comunidade confirmada, mas o ID da comunidade está ausente para ${phone}.`));
       return true;
     }
 
@@ -346,6 +348,6 @@ async function safeRecordExit(phone: string, groupId: string, reason: string): P
   try {
     await recordUserExitFromGroup(phone, groupId, reason);
   } catch (e) {
-    console.warn(`recordUserExitFromGroup falhou: ${String((e as Error)?.message ?? e)}`);
+    console.warn(`Falha ao registrar saída do usuário do grupo: ${String((e as Error)?.message ?? e)}`);
   }
 }

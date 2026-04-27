@@ -24,10 +24,10 @@ function parseEnvNumber(name: string, fallback?: number): number {
   const raw = process.env[name];
   if (raw == null || raw === "") {
     if (fallback != null) return fallback;
-    throw new Error(`Missing required env var: ${name}`);
+    throw new Error(`Variável de ambiente obrigatória ausente: ${name}`);
   }
   const n = Number(raw);
-  if (!Number.isFinite(n)) throw new Error(`Env ${name} must be a number. Got: "${raw}"`);
+  if (!Number.isFinite(n)) throw new Error(`A variável de ambiente ${name} deve ser numérica. Recebido: "${raw}"`);
   return n;
 }
 
@@ -69,7 +69,7 @@ function asStatusCode(status: unknown): number | null {
 async function withTimeout<T>(p: Promise<T>, ms = CALL_TIMEOUT_MS): Promise<T> {
   let t: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, rej) => {
-    t = setTimeout(() => rej(new Error(`Operation timed out after ${ms}ms`)), ms);
+    t = setTimeout(() => rej(new Error(`Operação excedeu o tempo limite após ${ms}ms`)), ms);
   });
   try {
     const res = await Promise.race([p, timeout]);
@@ -137,7 +137,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
   }
 
   const groupJid = asGroupJid(item.group_id);
-  console.log(ansi.cyan(`Processando inclusão: reg=${item.registration_id} -> grupo=${groupJid}`));
+  console.log(ansi.cyan(`Processando inclusão: inscrição=${item.registration_id} -> grupo=${groupJid}`));
 
   // 2) Check admin in target group
   let meta: GroupMetadata;
@@ -167,7 +167,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
   // 3) Get member phones
   const memberPhones: MemberPhone[] = await getMemberPhoneNumbers(Number(item.registration_id));
   if (!memberPhones?.length) {
-    const reason = `Nenhum telefone encontrado para registration_id ${item.registration_id}.`;
+    const reason = `Nenhum telefone encontrado para a inscrição ${item.registration_id}.`;
     console.log(ansi.red(reason));
     await safeNotifyFailure(item.request_id, reason, {
       item,
@@ -179,7 +179,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
 
   const normalizedPhones = dedupePhonesByAuthKey(memberPhones, item.group_type);
   if (!normalizedPhones.length) {
-    const reason = `Nenhum telefone válido/autorizável para registration_id ${item.registration_id}.`;
+    const reason = `Nenhum telefone válido/autorizável para a inscrição ${item.registration_id}.`;
     console.log(ansi.red(reason));
     await safeNotifyFailure(item.request_id, reason, {
       item,
@@ -211,7 +211,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
     const attempt = await addMemberToGroup(sock, authorized.phone_number, groupJid, meta);
 
     if (attempt.added) {
-      console.log(ansi.green(`Adicionado: reg=${item.registration_id} -> ${normalized} em ${groupJid}`));
+      console.log(ansi.green(`Adicionado: inscrição=${item.registration_id} -> ${normalized} em ${groupJid}`));
       await safeRecordEntry(Number(item.registration_id), normalized, groupJid, "Active");
       results.added = true;
       results.processedPhones++;
@@ -229,11 +229,11 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
   if (results.processedPhones > 0) {
     await registerWhatsappAddFulfilled(item.request_id);
     console.log(
-      ansi.green(`Request nº ${item.request_id} cumprida — ${results.processedPhones}/${results.totalPhones}`),
+      ansi.green(`Solicitação nº ${item.request_id} cumprida: ${results.processedPhones}/${results.totalPhones}`),
     );
   } else {
     await registerWhatsappAddAttempt(item.request_id);
-    const baseMsg = `Não foi possível cumprir request nº ${item.request_id} (reg=${item.registration_id}).`;
+    const baseMsg = `Não foi possível cumprir a solicitação nº ${item.request_id} (inscrição=${item.registration_id}).`;
     console.log(ansi.red(baseMsg));
     let telegramReason = baseMsg;
     if (notAuthorizedNumbers.length) {
@@ -282,7 +282,7 @@ export async function addMemberToGroup(
 
     console.warn(
       ansi.yellow(
-        `Falha ao adicionar ${phone} ao grupo ${groupJid} (${metadata.subject ?? groupJid}). status=${status ?? "unknown"}`,
+        `Falha ao adicionar ${phone} ao grupo ${groupJid} (${metadata.subject ?? groupJid}). status=${status ?? "desconhecido"}`,
       ),
     );
     return { added: false, alreadyInGroup: false };
@@ -318,7 +318,7 @@ async function safeRecordEntry(
   try {
     await recordUserEntryToGroup(registrationId, normalizedPhone, groupJid, status);
   } catch (e) {
-    console.warn(`recordUserEntryToGroup falhou: ${String((e as Error)?.message ?? e)}`);
+    console.warn(`Falha ao registrar entrada do usuário no grupo: ${String((e as Error)?.message ?? e)}`);
   }
 }
 
@@ -339,7 +339,7 @@ async function safeNotifyFailure(
     };
     await notifyAdditionFailure(payload);
   } catch (e) {
-    console.warn(`sendAdditionFailedReason falhou: ${String((e as Error)?.message ?? e)}`);
+    console.warn(`Falha ao registrar motivo de falha da inclusão: ${String((e as Error)?.message ?? e)}`);
   }
 }
 
@@ -347,7 +347,7 @@ async function safeRegisterAttempt(requestId: string | number): Promise<void> {
   try {
     await registerWhatsappAddAttempt(Number(requestId));
   } catch (e) {
-    console.warn(`registerWhatsappAddAttempt falhou: ${String((e as Error)?.message ?? e)}`);
+    console.warn(`Falha ao registrar tentativa de inclusão no WhatsApp: ${String((e as Error)?.message ?? e)}`);
   }
 }
 

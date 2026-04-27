@@ -23,7 +23,7 @@ function parseEnvNumber(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw == null || raw === "") return fallback;
   const n = Number(raw);
-  if (!Number.isFinite(n)) throw new Error(`Env ${name} must be a number. Got: "${raw}"`);
+  if (!Number.isFinite(n)) throw new Error(`A variável de ambiente ${name} deve ser numérica. Recebido: "${raw}"`);
   return n;
 }
 
@@ -93,7 +93,7 @@ function isConnectionClosedError(err: unknown): boolean {
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let t: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, rej) => {
-    t = setTimeout(() => rej(new Error(`Operation timed out after ${ms}ms`)), ms);
+    t = setTimeout(() => rej(new Error(`Operação excedeu o tempo limite após ${ms}ms`)), ms);
   });
   try {
     const res = await Promise.race([p, timeout]);
@@ -116,7 +116,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
         resolve();
       } else if (code === DisconnectReason.loggedOut) {
         cleanup();
-        reject(new Error("Session logged out. Delete the local auth folder and link again."));
+        reject(new Error("Sessão desconectada. Apague a pasta local de autenticação e vincule novamente."));
       }
     };
     const cleanup = () => {
@@ -126,7 +126,7 @@ async function waitForOpen(sock: ReturnType<typeof makeWASocket>, timeoutMs = 60
     timer = setTimeout(() => {
       if (!resolved) {
         cleanup();
-        reject(new Error("Timeout waiting for WhatsApp connection."));
+        reject(new Error("Tempo limite excedido aguardando conexão com o WhatsApp."));
       }
     }, timeoutMs);
     sock.ev.on("connection.update", onUpdate);
@@ -262,7 +262,7 @@ async function main(): Promise<void> {
 
   const reconnect = async (): Promise<void> => {
     if (lastDisconnectCode === DisconnectReason.loggedOut) {
-      throw new Error("Session logged out. Delete the local auth folder and link again.");
+      throw new Error("Sessão desconectada. Apague a pasta local de autenticação e vincule novamente.");
     }
     sock = makeSocket();
     await waitForOpen(sock);
@@ -287,10 +287,10 @@ async function main(): Promise<void> {
       await delayBeforePromote(reconnectDelay);
       await reconnect();
     }
-    return lastResult ?? { ok: false, status: null, error: "Connection Closed", connectionClosed: true };
+    return lastResult ?? { ok: false, status: null, error: "Conexão fechada", connectionClosed: true };
   };
 
-  console.log("✅ Connected. Fetching groups...");
+  console.log("✅ Conectado. Buscando grupos...");
   const groupsRecord = await sock.groupFetchAllParticipating();
   const groups: GroupMetadata[] = Object.values(groupsRecord);
 
@@ -342,7 +342,7 @@ async function main(): Promise<void> {
     const isCommunity = Boolean(meta.isCommunity || meta.isCommunityAnnounce);
     if (isCommunity && !participant) {
       skippedCommunity++;
-      console.log(`⛔ Comunidade detectada; pulando add: ${groupName} (${groupJid})`);
+      console.log(`⛔ Comunidade detectada; pulando adição: ${groupName} (${groupJid})`);
       skippedGroups.push({ groupJid, groupName, reason: "community_no_participant" });
       continue;
     }
@@ -461,6 +461,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err?.message || err);
+  console.error("❌ Erro:", err?.message || err);
   process.exit(1);
 });

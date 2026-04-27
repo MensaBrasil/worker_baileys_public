@@ -32,7 +32,7 @@ function parseEnvNumber(name: string, fallback: number): number {
   if (raw == null || raw === "") return fallback;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid numeric env var ${name}: "${raw}"`);
+    throw new Error(`Variável de ambiente numérica inválida ${name}: "${raw}"`);
   }
   return parsed;
 }
@@ -48,20 +48,20 @@ if (!addMode && !removeMode && !moderationMode && !authMode) {
   removeMode = true;
   moderationMode = true;
   authMode = true;
-  logger.info("Normal mode (default). All modes active: add, remove, moderation, auth.");
+  logger.info("Modo normal (padrão). Todos os modos ativos: adição, remoção, moderação e autorização.");
 } else {
   const activeModes: string[] = [];
-  if (addMode) activeModes.push("add");
-  if (removeMode) activeModes.push("remove");
-  if (moderationMode) activeModes.push("moderation");
-  if (authMode) activeModes.push("auth");
-  if (pairingCodeMode) activeModes.push("pairing");
+  if (addMode) activeModes.push("adição");
+  if (removeMode) activeModes.push("remoção");
+  if (moderationMode) activeModes.push("moderação");
+  if (authMode) activeModes.push("autorização");
+  if (pairingCodeMode) activeModes.push("pareamento");
 
-  logger.info(`Active modes: ${activeModes.join(", ")}`);
+  logger.info(`Modos ativos: ${activeModes.join(", ")}`);
 }
 
 process.on("unhandledRejection", (reason) => {
-  logger.error({ err: reason }, "Unhandled Rejection");
+  logger.error({ err: reason }, "Promise rejeitada sem tratamento");
   process.exit(1);
 });
 
@@ -98,7 +98,7 @@ function logDisconnectDetails(err: unknown) {
       payload: asAny.output?.payload,
       stack: asAny.stack,
     },
-    "[wa] lastDisconnect details",
+    "[wa] detalhes da última desconexão",
   );
 }
 
@@ -133,10 +133,10 @@ async function main() {
       const code = await sock.requestPairingCode(phoneNumber);
       logger.warn(
         { code },
-        "Pairing code gerado; entre em WhatsApp > Conectados > Adicionar dispositivo e insira o código.",
+        "Código de pareamento gerado; entre em WhatsApp > Dispositivos conectados > Conectar um dispositivo e insira o código.",
       );
     } catch (err) {
-      logger.error({ err }, "Falha ao gerar pairing code");
+      logger.error({ err }, "Falha ao gerar código de pareamento");
       throw err;
     }
   }
@@ -144,22 +144,22 @@ async function main() {
   sock.ev.on("connection.update", async ({ connection, qr, lastDisconnect }) => {
     if (qr && !pairingCodeMode) {
       qrcode.generate(qr, { small: true });
-      logger.info("Scan the QR code in WhatsApp > Connected devices");
+      logger.info("Escaneie o QR code em WhatsApp > Dispositivos conectados");
     }
 
     if (connection === "open") {
-      logger.info("[wa] connection opened.");
+      logger.info("[wa] conexão aberta.");
 
       const workerPhone =
         (sock.user as { phoneNumber?: string } | undefined)?.phoneNumber?.replace(/\D/g, "") ||
         sock.user?.id?.split(":")[0]?.split("@")[0]?.replace(/\D/g, "");
-      if (!workerPhone) throw new Error("Unable to determine worker phone from Baileys instance.");
+      if (!workerPhone) throw new Error("Não foi possível determinar o telefone do worker pela instância do Baileys.");
 
       registerFirstContactWelcome(sock);
 
       const workers = await getAllWhatsAppWorkers();
       const found = workers.find((w) => w.worker_phone.replace(/\D/g, "") === workerPhone);
-      if (!found) throw new Error(`Worker phone ${workerPhone} not found in database.`);
+      if (!found) throw new Error(`Telefone do worker ${workerPhone} não encontrado no banco.`);
 
       const worker: Worker = {
         id: found.id,
@@ -170,14 +170,14 @@ async function main() {
 
       // Initial authorization sweep (non-group chats/contacts)
       try {
-        logger.info(`Running initial authorization check for worker: ${worker.phone}`);
+        logger.info(`Executando verificação inicial de autorização para o worker: ${worker.phone}`);
         await addNewAuthorizations(sock, worker.phone);
       } catch (e) {
-        logger.warn({ err: e }, "Initial authorization check failed (continuing)");
+        logger.warn({ err: e }, "Falha na verificação inicial de autorização; continuando");
       }
 
       if (mainLoopStarted) {
-        logger.warn("Main loop already started; skipping duplicate start.");
+        logger.warn("Loop principal já iniciado; ignorando início duplicado.");
         return;
       }
       mainLoopStarted = true;
@@ -206,19 +206,19 @@ async function main() {
                 await pingUptime(uptimeUrl);
                 lastUptimePingAt = now;
               } catch (err) {
-                logger.warn({ err }, "Uptime check failed");
+                logger.warn({ err }, "Falha na verificação de uptime");
               }
             }
             const currentTime = Date.now();
             const elapsed = currentTime - startTime;
             const minutes = Math.floor(elapsed / 60_000);
             if (!runtimeLoggedOnce || minutes - lastRuntimeLogMinutes >= 5) {
-              logger.info(`Process has been running for ${minutes} minutes`);
+              logger.info(`Processo em execução há ${minutes} minuto(s)`);
               lastRuntimeLogMinutes = minutes;
               runtimeLoggedOnce = true;
             }
           } catch (err) {
-            logger.error({ err }, "[mainLoop] error");
+            logger.error({ err }, "[mainLoop] erro");
             shouldApplyIdleDelay = true;
           }
 
@@ -226,7 +226,7 @@ async function main() {
             await delaySecs(15, idleLoopDelaySeconds);
           }
         }
-      })().catch((e) => logger.error({ err: e }, "[mainLoop] fatal"));
+      })().catch((e) => logger.error({ err: e }, "[mainLoop] erro fatal"));
 
       // Event-driven moderation/auth flows
       if (moderationMode || authMode) {
@@ -263,14 +263,14 @@ async function main() {
                     react: { text: "🪇", key: m.key },
                   });
                 } catch (err) {
-                  logger.warn({ err }, "Failed to send chocalho reaction");
+                  logger.warn({ err }, "Falha ao enviar reação de chocalho");
                 }
               }
 
               try {
                 await handleConsentAutoReply(sock, m);
               } catch (err) {
-                logger.warn({ err, remoteJid }, "Falha ao enviar resposta automatica de autorizacao de grupos");
+                logger.warn({ err, remoteJid }, "Falha ao enviar resposta automática de autorização de grupos");
               }
             }
 
@@ -304,12 +304,12 @@ async function main() {
       if (isLoggedOut) {
         logger.fatal(
           { code },
-          "[wa] connection closed: Session logged out. Delete the local auth folder and link again.",
+          "[wa] conexão fechada: sessão desconectada. Apague a pasta local de autenticação e vincule novamente.",
         );
         process.exit(1);
       }
 
-      logger.warn({ code }, "[wa] connection closed; scheduling restart...");
+      logger.warn({ code }, "[wa] conexão fechada; agendando reinício...");
       mainLoopStarted = false;
       shouldRun = false;
       resolveRestart?.();
@@ -325,15 +325,15 @@ async function startWorker() {
     try {
       await main();
     } catch (error) {
-      logger.error({ err: error }, "Unhandled error");
+      logger.error({ err: error }, "Erro não tratado");
     }
 
-    logger.info("Restarting socket in 5 seconds...");
+    logger.info("Reiniciando socket em 5 segundos...");
     await new Promise((res) => setTimeout(res, 5000));
   }
 }
 
 startWorker().catch((error) => {
-  logger.fatal({ err: error }, "Fatal error starting worker loop");
+  logger.fatal({ err: error }, "Erro fatal ao iniciar loop do worker");
   process.exit(1);
 });

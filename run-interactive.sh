@@ -10,7 +10,7 @@ echo " 4) Moderação + auth (--moderation --auth)"
 echo " 5) Adição + remoção + auth (--add --remove --auth)"
 echo " 6) Adição + moderação + auth (--add --moderation --auth)"
 echo " 7) Remoção + moderação + auth (--remove --moderation --auth)"
-echo " 8) Custom (digite as flags; --auth será adicionado automaticamente)"
+echo " 8) Personalizado (digite as flags; --auth será adicionado automaticamente)"
 printf "Opção: "
 read -r choice
 

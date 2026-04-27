@@ -114,7 +114,7 @@ async function resolveMessageSenderContextWithLogs(
         participant: message.key.participant,
         participantAlt: message.key.participantAlt,
       },
-      "[auth] Mensagem ignorada: nao foi possivel resolver senderJid",
+      "[auth] Mensagem ignorada: não foi possível resolver senderJid",
     );
     return null;
   }
@@ -125,12 +125,12 @@ async function resolveMessageSenderContextWithLogs(
 async function getWorkerOrThrow(workerPhone: string): Promise<WhatsAppWorker> {
   const safeWorkerPhone = normalizeDigits(workerPhone);
   if (!safeWorkerPhone) {
-    throw new Error("workerPhone is required and must be a string");
+    throw new Error("workerPhone é obrigatório e deve ser uma string");
   }
 
   const worker = await getWhatsAppWorkerByPhone(safeWorkerPhone);
   if (!worker) {
-    throw new Error(`Worker not found for phone number: ${workerPhone}`);
+    throw new Error(`Worker não encontrado para o telefone: ${workerPhone}`);
   }
 
   return worker;
@@ -238,7 +238,7 @@ async function ensureAuthorizationAndContactForMessage(
         remoteJid: message.key.remoteJid,
         remoteJidAlt: message.key.remoteJidAlt,
       },
-      "[auth] Mensagem ignorada: nao e conversa direta ou senderContext ausente",
+      "[auth] Mensagem ignorada: não é conversa direta ou senderContext está ausente",
     );
     return { success: true, skipped: true };
   }
@@ -252,7 +252,7 @@ async function ensureAuthorizationAndContactForMessage(
         targetJid: senderContext.targetJid,
         altJid: senderContext.altJid,
       },
-      "[auth] Mensagem ignorada: nao foi possivel resolver telefone do remetente",
+      "[auth] Mensagem ignorada: não foi possível resolver telefone do remetente",
     );
     return { success: true, skipped: true };
   }
@@ -264,7 +264,7 @@ async function ensureAuthorizationAndContactForMessage(
         phone: senderPhone,
         workerId: worker.id,
       },
-      "[auth] Autorizacao ignorada: telefone nao encontrado no cadastro",
+      "[auth] Autorização ignorada: telefone não encontrado no cadastro",
     );
 
     return {
@@ -285,7 +285,7 @@ async function ensureAuthorizationAndContactForMessage(
       contactSynced,
       foundInDatabase: true,
     },
-    "[auth] Autorizacao verificada para contato direto",
+    "[auth] Autorização verificada para contato direto",
   );
 
   return {
@@ -303,15 +303,15 @@ async function ensureAuthorizationAndContactForMessage(
  */
 export async function checkAuth(sock: WASocket, message: WAMessage, workerPhone: string): Promise<AuthCheckResult> {
   try {
-    if (!sock) throw new Error("sock (WASocket) is required");
-    if (!message?.key) throw new Error("message is required");
+    if (!sock) throw new Error("sock (WASocket) é obrigatório");
+    if (!message?.key) throw new Error("message é obrigatório");
 
     getContactSyncState(sock);
     const worker = await getWorkerOrThrow(workerPhone);
     return await ensureAuthorizationAndContactForMessage(sock, message, worker);
   } catch (error) {
     const msg = (error as Error)?.message ?? String(error);
-    throw new Error(`checkAuth failed: ${msg}`, { cause: error });
+    throw new Error(`checkAuth falhou: ${msg}`, { cause: error });
   }
 }
 
@@ -321,7 +321,7 @@ export async function checkAuth(sock: WASocket, message: WAMessage, workerPhone:
  */
 export async function addNewAuthorizations(sock: WASocket, workerPhone: string): Promise<void> {
   try {
-    if (!sock) throw new Error("sock (WASocket) is required");
+    if (!sock) throw new Error("sock (WASocket) é obrigatório");
     const worker = await getWorkerOrThrow(workerPhone);
     const state = getContactSyncState(sock);
     const collectedMessages: WAMessage[] = [];
@@ -378,7 +378,7 @@ export async function addNewAuthorizations(sock: WASocket, workerPhone: string):
     });
 
     if (!collectedMessages.length) {
-      logger.info("[auth] No phone numbers found for initial authorization");
+      logger.info("[auth] Nenhum telefone encontrado para autorização inicial");
       return;
     }
 
@@ -395,7 +395,7 @@ export async function addNewAuthorizations(sock: WASocket, workerPhone: string):
     }
 
     if (!latestMessagesByPhone.size) {
-      logger.info("[auth] No valid contacts found for authorization");
+      logger.info("[auth] Nenhum contato válido encontrado para autorização");
       return;
     }
 
@@ -408,12 +408,12 @@ export async function addNewAuthorizations(sock: WASocket, workerPhone: string):
           processed += 1;
         }
       } catch (error) {
-        logger.warn({ err: error }, "[auth] Failed to process an initial direct-message contact");
+        logger.warn({ err: error }, "[auth] Falha ao processar contato inicial de conversa direta");
       }
     }
 
-    logger.info(`[auth] Successfully synchronized authorizations/contacts for ${processed} contacts.`);
+    logger.info(`[auth] Autorizações/contatos sincronizados com sucesso para ${processed} contato(s).`);
   } catch (error) {
-    logger.error({ err: error }, "[auth] Error updating authorizations");
+    logger.error({ err: error }, "[auth] Erro ao atualizar autorizações");
   }
 }
