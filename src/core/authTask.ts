@@ -1,8 +1,8 @@
-import { jidNormalizedUser, type BaileysEventMap, type WAMessage, type WASocket } from "baileys";
+import { type BaileysEventMap, jidNormalizedUser, type WAMessage, type WASocket } from "baileys";
 import { getWhatsAppWorkerByPhone, resolveContactNameByPhone, upsertWhatsappAuthorizationByPhone } from "../db/pgsql";
-import { jidToPhone, resolveMessageSenderContext, type MessageSenderContext } from "./messageSender";
 import type { WhatsAppWorker } from "../types/pgsqlTypes";
 import logger from "../utils/logger";
+import { jidToPhone, type MessageSenderContext, resolveMessageSenderContext } from "./messageSender";
 
 type SavedContact = {
   id: string;
@@ -16,6 +16,7 @@ type AuthCheckResult = {
   already?: boolean;
   skipped?: boolean;
   contactSynced?: boolean;
+  foundInDatabase?: boolean;
 };
 
 type ContactSyncState = {
@@ -256,6 +257,23 @@ async function ensureAuthorizationAndContactForMessage(
     return { success: true, skipped: true };
   }
 
+  const resolvedNameFromDatabase = await resolveContactNameByPhone(senderPhone);
+  if (!resolvedNameFromDatabase) {
+    logger.info(
+      {
+        phone: senderPhone,
+        workerId: worker.id,
+      },
+      "[auth] Autorizacao ignorada: telefone nao encontrado no cadastro",
+    );
+
+    return {
+      success: true,
+      skipped: true,
+      foundInDatabase: false,
+    };
+  }
+
   const authResult = await upsertWhatsappAuthorizationByPhone(senderPhone, worker.id);
   const contactSynced = await syncContactForMessage(sock, message, senderContext, senderPhone);
 
@@ -265,6 +283,7 @@ async function ensureAuthorizationAndContactForMessage(
       workerId: worker.id,
       alreadyAuthorized: authResult.alreadyAuthorized,
       contactSynced,
+      foundInDatabase: true,
     },
     "[auth] Autorizacao verificada para contato direto",
   );
@@ -274,6 +293,7 @@ async function ensureAuthorizationAndContactForMessage(
     already: authResult.alreadyAuthorized,
     skipped: false,
     contactSynced,
+    foundInDatabase: true,
   };
 }
 

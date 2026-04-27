@@ -1,13 +1,13 @@
 import { config as configDotenv } from "dotenv";
 import { Pool } from "pg";
 import type {
-  PgEnv,
   MemberPhone,
   MemberStatus,
+  PgEnv,
   WhatsAppAuthorization,
   WhatsAppAuthorizationInput,
-  WhatsAppWorker,
   WhatsAppModerationInput,
+  WhatsAppWorker,
 } from "../types/pgsqlTypes.ts";
 
 configDotenv({ path: ".env" });
@@ -30,12 +30,17 @@ function readPgEnv(): PgEnv & { PG_DB_PORT: string } {
     throw new Error(`Missing required DB env vars: ${keys}`);
   }
 
+  const requiredEnv = (name: keyof PgEnv, value: string | undefined): string => {
+    if (!value) throw new Error(`Missing required DB env var: ${name}`);
+    return value;
+  };
+
   return {
-    PG_DB_HOST: PG_DB_HOST!,
-    PG_DB_PORT: PG_DB_PORT!,
-    PG_DB_NAME: PG_DB_NAME!,
-    PG_DB_USER: PG_DB_USER!,
-    PG_DB_PASSWORD: PG_DB_PASSWORD!,
+    PG_DB_HOST: requiredEnv("PG_DB_HOST", PG_DB_HOST),
+    PG_DB_PORT: requiredEnv("PG_DB_PORT", PG_DB_PORT),
+    PG_DB_NAME: requiredEnv("PG_DB_NAME", PG_DB_NAME),
+    PG_DB_USER: requiredEnv("PG_DB_USER", PG_DB_USER),
+    PG_DB_PASSWORD: requiredEnv("PG_DB_PASSWORD", PG_DB_PASSWORD),
   };
 }
 
@@ -430,7 +435,8 @@ export async function insertWhatsAppModeration(input: WhatsAppModerationInput): 
   ];
 
   // If caller provided timestamp, we include it as a bound param; otherwise, use NOW().
-  const hasTimestamp = Boolean(input.timestamp);
+  const timestamp = input.timestamp;
+  const hasTimestamp = Boolean(timestamp);
   const placeholderBase = hasTimestamp ? `($1, $2, $3, $4, $5, $6, $7)` : `($1, $2, NOW(), $3, $4, $5, $6)`;
 
   const query = `
@@ -438,8 +444,8 @@ export async function insertWhatsAppModeration(input: WhatsAppModerationInput): 
     VALUES ${placeholderBase};
   `;
 
-  const finalValues = hasTimestamp
-    ? [values[0], values[1], input.timestamp!, values[2], values[3], values[4], values[5]]
+  const finalValues = timestamp
+    ? [values[0], values[1], timestamp, values[2], values[3], values[4], values[5]]
     : values;
 
   await getPool().query(query, finalValues);

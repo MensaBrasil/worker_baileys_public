@@ -1,8 +1,8 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { Command } from "commander";
-import * as fs from "fs";
-import * as path from "path";
-import { createClient, RedisClientType } from "redis";
 import { config as configDotenv } from "dotenv";
+import { createClient, type RedisClientType } from "redis";
 import { QueueKey } from "../types/redisTypes";
 
 configDotenv({ path: ".env" });

@@ -17,7 +17,7 @@ export interface RemoveQueueItem {
 }
 
 /** ---------- Queue keys ---------- */
-export const enum QueueKey {
+export enum QueueKey {
   Add = "addQueue",
   Remove = "removeQueue",
 }

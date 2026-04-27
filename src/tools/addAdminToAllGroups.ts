@@ -1,17 +1,17 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import {
+  Browsers,
+  type ConnectionState,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  type GroupMetadata,
+  makeWASocket,
+  useMultiFileAuthState,
+  type WASocket,
+} from "baileys";
 import { Command } from "commander";
 import { config as configDotenv } from "dotenv";
-import {
-  makeWASocket,
-  fetchLatestBaileysVersion,
-  Browsers,
-  DisconnectReason,
-  type ConnectionState,
-  type GroupMetadata,
-  type WASocket,
-  useMultiFileAuthState,
-} from "baileys";
-import * as fs from "fs";
-import * as path from "path";
 import { getAuthStateDir } from "../baileys/auth-state-dir";
 import type { BoomError } from "../types/errorTypes";
 import { delaySecs } from "../utils/delay";
@@ -70,7 +70,7 @@ function normalizeUserJid(input: string): { normalized: string; digits: string }
   let domain = "s.whatsapp.net";
   if (input.includes("@")) {
     const parts = input.split("@");
-    if (parts[1] && parts[1].trim()) domain = parts[1].trim();
+    if (parts[1]?.trim()) domain = parts[1].trim();
   }
 
   return { normalized: `${digits}@${domain}`, digits };

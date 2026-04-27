@@ -1,29 +1,29 @@
-import { config as configDotenv } from "dotenv";
 import {
-  makeWASocket,
+  Browsers,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  Browsers,
   isJidBroadcast,
   isJidGroup,
   isJidNewsletter,
   isJidStatusBroadcast,
+  makeWASocket,
   useMultiFileAuthState,
 } from "baileys";
+import { config as configDotenv } from "dotenv";
 import qrcode from "qrcode-terminal";
-import logger from "./utils/logger";
 import { getAuthStateDir } from "./baileys/auth-state-dir";
-
-import { BoomError } from "./types/errorTypes";
 import { processAddQueue } from "./core/addTask";
+import { addNewAuthorizations, checkAuth } from "./core/authTask";
+import { handleConsentAutoReply } from "./core/consentAutoReply";
+import { registerFirstContactWelcome } from "./core/firstContactWelcome";
+import { handleMessageModeration } from "./core/moderationTask";
 import { processRemoveQueue } from "./core/removeTask";
-import type { Worker } from "./types/addTaskTypes";
 import { getAllWhatsAppWorkers } from "./db/pgsql";
 import { testRedisConnection } from "./db/redis";
+import type { Worker } from "./types/addTaskTypes";
+import type { BoomError } from "./types/errorTypes";
 import { delaySecs } from "./utils/delay";
-import { addNewAuthorizations, checkAuth } from "./core/authTask";
-import { handleMessageModeration } from "./core/moderationTask";
-import { registerFirstContactWelcome } from "./core/firstContactWelcome";
+import logger from "./utils/logger";
 
 configDotenv({ path: ".env" });
 
@@ -265,6 +265,12 @@ async function main() {
                 } catch (err) {
                   logger.warn({ err }, "Failed to send chocalho reaction");
                 }
+              }
+
+              try {
+                await handleConsentAutoReply(sock, m);
+              } catch (err) {
+                logger.warn({ err, remoteJid }, "Falha ao enviar resposta automatica de autorizacao de grupos");
               }
             }
 

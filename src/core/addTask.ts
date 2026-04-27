@@ -1,21 +1,21 @@
+import type { GroupMetadata, WASocket } from "baileys";
 import { config as configDotenv } from "dotenv";
-import type { WASocket, GroupMetadata } from "baileys";
-import { AddAttemptResult, AddProcessResult, MemberPhone, Worker } from "../types/addTaskTypes";
-import type { MemberStatus } from "../types/pgsqlTypes";
-import { AddQueueItem } from "../types/redisTypes";
-import { phoneToUserJid, asGroupJid } from "../utils/phoneToJid";
-import { findParticipant, isParticipantAdmin } from "../utils/waParticipants";
-import { delaySecs } from "../utils/delay";
 import {
   getMemberPhoneNumbers,
-  recordUserEntryToGroup,
-  registerWhatsappAddFulfilled,
-  registerWhatsappAddAttempt,
   getWhatsappAuthorization,
+  recordUserEntryToGroup,
+  registerWhatsappAddAttempt,
+  registerWhatsappAddFulfilled,
   sendAdditionFailedReason,
 } from "../db/pgsql";
-import { notifyAdditionFailure } from "../utils/telegram";
 import { getFromAddQueue, requeueAddQueue } from "../db/redis";
+import type { AddAttemptResult, AddProcessResult, MemberPhone, Worker } from "../types/addTaskTypes";
+import type { MemberStatus } from "../types/pgsqlTypes";
+import type { AddQueueItem } from "../types/redisTypes";
+import { delaySecs } from "../utils/delay";
+import { asGroupJid, phoneToUserJid } from "../utils/phoneToJid";
+import { notifyAdditionFailure } from "../utils/telegram";
+import { findParticipant, isParticipantAdmin } from "../utils/waParticipants";
 
 // ---------- env & config ----------
 configDotenv({ path: ".env" });

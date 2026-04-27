@@ -1,11 +1,10 @@
+import type { GroupMetadata, WASocket } from "baileys";
 import { config as configDotenv } from "dotenv";
-import type { WASocket, GroupMetadata } from "baileys";
-
-import { getFromRemoveQueue, requeueRemoveQueue } from "../db/redis";
 import { recordUserExitFromGroup } from "../db/pgsql";
-import { notifyRemovalFailure } from "../utils/telegram";
+import { getFromRemoveQueue, requeueRemoveQueue } from "../db/redis";
 import { delaySecs } from "../utils/delay";
-import { phoneToUserJid, asGroupJid } from "../utils/phoneToJid";
+import { asGroupJid, phoneToUserJid } from "../utils/phoneToJid";
+import { notifyRemovalFailure } from "../utils/telegram";
 import { findParticipant, isParticipantAdmin } from "../utils/waParticipants";
 
 configDotenv({ path: ".env" });
@@ -163,10 +162,17 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
   const result = await removeMemberFromGroup(sock, phone, groupId, communityIdToUse);
 
   if (result.removed && result.removalType === "Community") {
+    if (!communityIdToUse) {
+      console.log(ansi.yellow(`Remoção da comunidade confirmada, mas communityId está ausente para ${phone}.`));
+      return true;
+    }
+
     console.log(
-      ansi.green(`Membro ${phone} removido da comunidade ${communityId} -> ${result.groupName} | motivo: ${reason}`),
+      ansi.green(
+        `Membro ${phone} removido da comunidade ${communityIdToUse} -> ${result.groupName} | motivo: ${reason}`,
+      ),
     );
-    await safeRecordExit(phone, communityId!, reason);
+    await safeRecordExit(phone, communityIdToUse, reason);
     await delaySecs(MIN_DELAY, MAX_DELAY, DELAY_JITTER);
     return true;
   }
@@ -180,7 +186,7 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
 
   console.log(
     ansi.red(
-      `Falha ao remover ${phone} do grupo/comunidade (${groupId}${communityId ? ", " + communityId : ""}). ` +
+      `Falha ao remover ${phone} do grupo/comunidade (${groupId}${communityId ? `, ${communityId}` : ""}). ` +
         (result.errorReason ? `Motivo técnico: ${result.errorReason}` : ""),
     ),
   );

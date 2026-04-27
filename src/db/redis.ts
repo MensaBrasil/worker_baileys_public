@@ -1,6 +1,6 @@
 import { config as configDotenv } from "dotenv";
-import { createClient, RedisClientType } from "redis";
-import { AddQueueItem, RemoveQueueItem, QueueKey } from "../types/redisTypes";
+import { createClient, type RedisClientType } from "redis";
+import { type AddQueueItem, QueueKey, type RemoveQueueItem } from "../types/redisTypes";
 
 configDotenv({ path: ".env" });
 
@@ -26,6 +26,8 @@ client.on("error", (err: Error) => {
 
 let isConnected = false;
 const FIRST_CONTACT_LOCK_PREFIX = "first-contact-welcome";
+const CONSENT_AUTO_REPLY_COOLDOWN_PREFIX = "consent-auto-reply";
+const CONSENT_AUTO_REPLY_COOLDOWN_SECONDS = 24 * 60 * 60;
 
 /**
  * Establishes a connection to the Redis client if not already connected.
@@ -69,6 +71,26 @@ export async function tryAcquireFirstContactLock(
     console.error("Falha ao adquirir lock de primeiro contato", error);
     return null;
   }
+}
+
+/**
+ * Checks whether a consent auto-reply was already sent to this phone during the cooldown window.
+ */
+export async function hasConsentAutoReplyCooldown(phone: string): Promise<boolean> {
+  await connect();
+  const key = `${CONSENT_AUTO_REPLY_COOLDOWN_PREFIX}:${phone}`;
+  return (await client.exists(key)) === 1;
+}
+
+/**
+ * Registers a consent auto-reply cooldown for 24 hours after the reply is sent.
+ */
+export async function registerConsentAutoReplySent(phone: string): Promise<void> {
+  await connect();
+  const key = `${CONSENT_AUTO_REPLY_COOLDOWN_PREFIX}:${phone}`;
+  await client.set(key, "1", {
+    EX: CONSENT_AUTO_REPLY_COOLDOWN_SECONDS,
+  });
 }
 
 /**

@@ -1,8 +1,8 @@
+import type { BaileysEventMap, GroupMetadata, proto, WAMessageKey, WASocket } from "baileys";
 import { config as configDotenv } from "dotenv";
-import type { BaileysEventMap, GroupMetadata, proto, WASocket, WAMessageKey } from "baileys";
-import { findParticipant } from "../utils/waParticipants";
-import logger from "../utils/logger";
 import { findRegistrationIdByPhone, insertWhatsAppModeration } from "../db/pgsql";
+import logger from "../utils/logger";
+import { findParticipant } from "../utils/waParticipants";
 
 configDotenv({ path: ".env" });
 
@@ -81,7 +81,7 @@ function getHostname(candidate: string): string | null {
   try {
     const url = new URL(value);
     const hostname = url.hostname;
-    if (!hostname || !hostname.includes(".")) return null;
+    if (!hostname?.includes(".")) return null;
     return hostname;
   } catch {
     return null;
@@ -104,7 +104,7 @@ function isDomainLike(candidate: string): boolean {
   try {
     const url = new URL(value);
     const hostname = url.hostname;
-    if (!hostname || !hostname.includes(".")) return false;
+    if (!hostname?.includes(".")) return false;
 
     const labels = hostname.split(".").filter(Boolean);
     if (labels.length < 2) return false;
@@ -167,7 +167,7 @@ async function deleteMessageIfAllowed(
   sock: WASocket,
   msg: proto.IWebMessageInfo,
   meta: GroupMetadata | null,
-): Promise<{ attempted: boolean; deleted: boolean } | void> {
+): Promise<{ attempted: boolean; deleted: boolean } | undefined> {
   try {
     const key = (msg.key ?? undefined) as
       | (proto.IMessageKey & {
@@ -233,7 +233,7 @@ export async function handleMessageModeration(
     const deletion = await deleteMessageIfAllowed(sock, msg, meta);
 
     // Persist moderation only when deletion was attempted (log outcome)
-    if (deletion && deletion.attempted) {
+    if (deletion?.attempted) {
       const fromJid = key?.remoteJid || key?.remoteJidAlt || "";
       const groupId = fromJid.endsWith("@g.us") ? fromJid.replace(/@g\.us$/, "") : fromJid;
       const senderJid = key?.participantAlt ?? key?.participant ?? key?.remoteJidAlt ?? key?.remoteJid ?? "";

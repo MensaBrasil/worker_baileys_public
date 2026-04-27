@@ -19,7 +19,7 @@ async function telegramRequest(method: string, payload: Record<string, unknown>)
   const t = (payload as { text?: string }).text;
   const preview = t ? (t.length > 140 ? `${t.slice(0, 140)}… (${t.length} chars)` : t) : undefined;
 
-  console.log(`[telegram] -> ${method} to chat ${chatId ?? "<unknown>"}` + (preview ? ` | preview: ${preview}` : ""));
+  console.log(`[telegram] -> ${method} to chat ${chatId ?? "<unknown>"}${preview ? ` | preview: ${preview}` : ""}`);
 
   try {
     const controller = new AbortController();

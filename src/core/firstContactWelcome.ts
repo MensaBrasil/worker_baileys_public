@@ -1,6 +1,6 @@
-import type { BaileysEventMap, GroupParticipant, ParticipantAction, WASocket } from "baileys";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { BaileysEventMap, GroupParticipant, ParticipantAction, WASocket } from "baileys";
 
 import { tryAcquireFirstContactLock } from "../db/redis";
 import logger from "../utils/logger";
@@ -261,7 +261,7 @@ export function registerFirstContactWelcome(sock: WASocket): void {
         }
 
         const requestsForGroup = pendingAudioRequests.get(remoteJid);
-        if (!requestsForGroup || !requestsForGroup.size) {
+        if (!requestsForGroup?.size) {
           continue;
         }
 

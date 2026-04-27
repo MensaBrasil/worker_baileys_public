@@ -1,20 +1,20 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import {
+  Browsers,
+  type ConnectionState,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  type GroupMetadata,
+  makeWASocket,
+  useMultiFileAuthState,
+} from "baileys";
 import { Command } from "commander";
 import { config as configDotenv } from "dotenv";
-import {
-  makeWASocket,
-  fetchLatestBaileysVersion,
-  Browsers,
-  DisconnectReason,
-  type ConnectionState,
-  type GroupMetadata,
-} from "baileys";
-import * as fs from "fs";
-import * as path from "path";
-import { getMemberPhoneNumbers } from "../db/pgsql";
-import { phoneToUserJid } from "../utils/phoneToJid";
-import { useMultiFileAuthState } from "baileys";
 import { getAuthStateDir } from "../baileys/auth-state-dir";
+import { getMemberPhoneNumbers } from "../db/pgsql";
 import type { BoomError } from "../types/errorTypes";
+import { phoneToUserJid } from "../utils/phoneToJid";
 
 configDotenv({ path: ".env" });
 
