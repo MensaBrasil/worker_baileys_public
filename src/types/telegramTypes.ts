@@ -17,7 +17,7 @@ export interface FlaggedLogPayload {
 
 export interface RemovalFailurePayload {
   phone: string;
-  registrationId: number | string;
+  registrationId?: number | string | null;
   groupId: string;
   groupName?: string | null;
   communityId?: string | null;

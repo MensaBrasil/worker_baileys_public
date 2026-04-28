@@ -126,11 +126,12 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
     return false;
   }
 
-  const { registration_id, phone, groupId, communityId } = item;
+  const { registration_id, phone, groupId, groupName, communityId } = item;
+  const queuedGroupName = groupName || groupId;
   const reason = normalizeCommunicationReason(item.reason);
   console.log(
     ansi.cyan(
-      `Processando remoção do membro inscrição=${registration_id} (${phone}) do grupo ${groupId}` +
+      `Processando remoção do membro inscrição=${registration_id} (${phone}) do grupo ${queuedGroupName} (${groupId})` +
         (communityId ? ` (e comunidade ${communityId})` : ""),
     ),
   );
@@ -180,7 +181,11 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
   }
 
   if (result.removed && result.removalType === "Group") {
-    console.log(ansi.green(`Membro ${phone} removido do grupo ${groupId} -> ${result.groupName} | motivo: ${reason}`));
+    console.log(
+      ansi.green(
+        `Membro ${phone} removido do grupo ${queuedGroupName} (${groupId}) -> ${result.groupName} | motivo: ${reason}`,
+      ),
+    );
     await safeRecordExit(phone, groupId, reason);
     await delaySecs(MIN_DELAY, MAX_DELAY, DELAY_JITTER);
     return true;
@@ -198,7 +203,7 @@ export async function processRemoveQueue(sock: WASocket): Promise<boolean> {
       phone,
       registrationId: item.registration_id,
       groupId,
-      groupName: result.groupName,
+      groupName: result.groupName ?? groupName,
       communityId: communityId || undefined,
       removalReason: reason,
       failureReason: result.errorReason || undefined,

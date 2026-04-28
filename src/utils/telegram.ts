@@ -137,8 +137,9 @@ export async function notifyRemovalFailure(payload: RemovalFailurePayload): Prom
     "<b>⚠️ FALHA NA REMOÇÃO DE MEMBRO ⚠️</b>",
     `<b>Horário:</b> ${ts}`,
     `<b>Telefone do membro:</b> ${payload.phone}`,
-    `<b>ID da inscrição:</b> ${payload.registrationId}`,
   ];
+  if (payload.registrationId != null)
+    lines.push(`<b>ID da inscrição:</b> ${escapeHtml(String(payload.registrationId))}`);
   const groupInfo = payload.groupName ? `${payload.groupName} (${payload.groupId})` : payload.groupId;
   lines.push(`<b>Grupo:</b> ${groupInfo}`);
   if (payload.communityId) lines.push(`<b>ID da comunidade:</b> ${payload.communityId}`);

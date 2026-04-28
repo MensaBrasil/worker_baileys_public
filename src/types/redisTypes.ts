@@ -9,11 +9,12 @@ export interface AddQueueItem {
 
 export interface RemoveQueueItem {
   type: string;
-  registration_id: string;
+  registration_id: string | number | null;
   groupId: string;
+  groupName?: string | null;
   phone: string;
   reason: string;
-  communityId: string | null;
+  communityId?: string | null;
 }
 
 /** ---------- Queue keys ---------- */

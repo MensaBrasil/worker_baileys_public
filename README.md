@@ -167,6 +167,7 @@ Based on `.env.example`:
   "type": "string",
   "registration_id": "456",
   "groupId": "group id",
+  "groupName": "group name",
   "phone": "5511999999999",
   "reason": "removal reason",
   "communityId": "community id or null"
