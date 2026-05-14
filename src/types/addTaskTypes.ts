@@ -8,6 +8,7 @@ export interface Worker {
 export interface MemberPhone {
   phone: string;
   is_legal_rep?: boolean;
+  member_gender?: "Masculino" | "Feminino" | string | null;
 }
 
 export interface AddAttemptResult {

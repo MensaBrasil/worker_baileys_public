@@ -12,6 +12,7 @@ import { getFromAddQueue, requeueAddQueue } from "../db/redis";
 import type { AddAttemptResult, AddProcessResult, MemberPhone, Worker } from "../types/addTaskTypes";
 import type { MemberStatus } from "../types/pgsqlTypes";
 import type { AddQueueItem } from "../types/redisTypes";
+import { isMBWomenGroup } from "../utils/checkGroupType";
 import { delaySecs } from "../utils/delay";
 import { asGroupJid, phoneToUserJid } from "../utils/phoneToJid";
 import { notifyAdditionFailure } from "../utils/telegram";
@@ -79,13 +80,19 @@ async function withTimeout<T>(p: Promise<T>, ms = CALL_TIMEOUT_MS): Promise<T> {
   }
 }
 
-function dedupePhonesByAuthKey(phones: MemberPhone[], groupType: string): NormalizedMemberPhone[] {
+function dedupePhonesByAuthKey(
+  phones: MemberPhone[],
+  groupType: string,
+  groupName: string | undefined | null,
+): NormalizedMemberPhone[] {
   const unique = new Map<string, NormalizedMemberPhone>();
+  const requiresFemaleMember = groupType === "MB" && isMBWomenGroup(groupName);
 
   for (const phone of phones) {
     // MB accepts only member phones; RJB accepts only legal-representative phones.
     if (groupType === "MB" && phone.is_legal_rep) continue;
     if (groupType === "RJB" && !phone.is_legal_rep) continue;
+    if (requiresFemaleMember && phone.member_gender !== "Feminino") continue;
 
     const normalized = normalizeDigits(phone.phone);
     if (!normalized) continue;
@@ -177,7 +184,7 @@ export async function processAddQueue(sock: WASocket, worker: Worker): Promise<A
     return baseResult(0, 0);
   }
 
-  const normalizedPhones = dedupePhonesByAuthKey(memberPhones, item.group_type);
+  const normalizedPhones = dedupePhonesByAuthKey(memberPhones, item.group_type, meta.subject);
   if (!normalizedPhones.length) {
     const reason = `Nenhum telefone válido/autorizável para a inscrição ${item.registration_id}.`;
     console.log(ansi.red(reason));

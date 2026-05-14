@@ -115,26 +115,32 @@ export async function getMemberPhoneNumbers(registration_id: number): Promise<Me
   const query = `
     SELECT
       phone_number AS phone,
-      FALSE AS is_legal_rep
-    FROM phones
-    WHERE registration_id = $1
+      FALSE AS is_legal_rep,
+      r.gender AS member_gender
+    FROM phones p
+    LEFT JOIN registration r ON r.registration_id = p.registration_id
+    WHERE p.registration_id = $1
 
     UNION ALL
 
     SELECT
       phone AS phone,
-      TRUE AS is_legal_rep
-    FROM legal_representatives
-    WHERE registration_id = $1
+      TRUE AS is_legal_rep,
+      r.gender AS member_gender
+    FROM legal_representatives lr
+    LEFT JOIN registration r ON r.registration_id = lr.registration_id
+    WHERE lr.registration_id = $1
 
     UNION ALL
 
     SELECT
       alternative_phone AS phone,
-      TRUE AS is_legal_rep
-    FROM legal_representatives
-    WHERE registration_id = $1
-      AND alternative_phone IS NOT NULL;
+      TRUE AS is_legal_rep,
+      r.gender AS member_gender
+    FROM legal_representatives lr
+    LEFT JOIN registration r ON r.registration_id = lr.registration_id
+    WHERE lr.registration_id = $1
+      AND lr.alternative_phone IS NOT NULL;
   `;
   const { rows } = await getPool().query(query, [registration_id]);
   // Rows already align to MemberPhone shape via the SELECT aliases

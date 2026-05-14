@@ -23,12 +23,26 @@ Grupo `MB` e qualquer grupo cujo nome:
 - comeca com `Avisos Mensa`; ou
 - comeca com `MB |`.
 
+Tambem sao tratados como `MB` estes nomes especificos:
+
+- `Mensampa Regional`
+- `Mensa Ribeirão Preto, São Carlos, Araraquara e redondezas`
+- `Mensa São José dos Campos e região`
+
 ### RJB
 
 Grupo `RJB` e qualquer grupo cujo nome:
 
 - comeca com `R.JB |`; ou
 - comeca com `R. JB |`.
+
+Tambem sao tratados como `RJB` estes nomes especificos:
+
+- `Avisos Mensa JB C.O/N`
+- `Avisos Mensa JB Nordeste`
+- `Avisos Mensa JB SP CIDADE`
+- `Avisos Mensa JB SP ESTADO`
+- `Avisos Mensa JB SUDESTE`
 
 ## Regra operacional que o worker aplica
 
@@ -38,6 +52,8 @@ Quando o item de fila vier como `MB`, o worker deve tentar apenas:
 
 - telefones do proprio cadastro do membro;
 - nunca telefones de responsavel legal.
+
+No grupo `MB | Mulheres`, o worker tambem exige `gender = Feminino` no cadastro antes de tentar adicionar.
 
 ### Adicao em RJB
 
@@ -53,6 +69,7 @@ O worker nao recalcula regra de negocio para remocao.
 Ele apenas executa a remocao enfileirada pelo `dispatcher_baileys`, que agora segue a regra global:
 
 - `MB`: somente membro adulto ativo com telefone no cadastro do membro;
+- `MB | Mulheres`: somente membro adulto ativo, com telefone no cadastro do membro e genero `Feminino`;
 - `RJB`: somente telefone de responsavel de menor ativo;
 - `suspensao` vence `convidado`;
 - inatividade e telefone nao encontrado respeitam carencia iniciada pela primeira mensagem automatica.
